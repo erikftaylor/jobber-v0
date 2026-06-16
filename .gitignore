@@ -7,3 +7,7 @@ dist/
 .claude/worktrees/
 SCOPE_LOCK.md
 docs/superpowers/plans/
+# Test artifacts
+test-data/
+uploads/
+test-fixtures/
