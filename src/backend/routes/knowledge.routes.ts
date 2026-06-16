@@ -26,6 +26,8 @@ const upload = multer({
 interface KnowledgeRouterDeps {
   db: DatabaseService;
   parser: DocumentParserService;
+  extractor?: any; // KnowledgeExtractionService
+  synthesizer?: any; // KnowledgeSynthesisService
 }
 
 export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
@@ -124,6 +126,59 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
       console.error('Delete document error:', error);
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Failed to delete document',
+      });
+    }
+  });
+
+  // POST /api/kb/refresh - Extract and synthesize knowledge from all documents
+  router.post('/refresh', async (req: Request, res: Response) => {
+    try {
+      if (!deps.extractor || !deps.synthesizer) {
+        res.status(501).json({
+          error: 'Extraction not available - Claude API key not configured',
+        });
+        return;
+      }
+
+      const documents = db.getAllDocuments();
+      if (documents.length === 0) {
+        res.json({
+          success: true,
+          message: 'No documents to extract from',
+        });
+        return;
+      }
+
+      // Extract knowledge from each document
+      const extractions = await Promise.all(
+        documents.map(doc =>
+          deps.extractor.extractFromDocument(doc.id, doc.raw_text, doc.filename)
+        )
+      );
+
+      // Synthesize all extractions
+      const synthesized = deps.synthesizer.synthesize(extractions);
+
+      // Update knowledge base
+      const updated = db.updateKnowledgeBase(
+        synthesized.skills,
+        synthesized.achievements,
+        synthesized.technologies,
+        synthesized.writingStyle,
+        synthesized.values,
+        new Date(),
+        new Date()
+      );
+
+      res.json({
+        success: true,
+        knowledgeBase: updated,
+        extractedDocuments: documents.length,
+      });
+    } catch (error) {
+      console.error('Refresh KB error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to refresh knowledge base',
       });
     }
   });
