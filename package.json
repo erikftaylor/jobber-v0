@@ -9,5 +9,23 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.2",
+    "better-sqlite3": "^12.11.1",
+    "docx": "^9.7.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@vitejs/plugin-react": "^6.0.2",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.9"
+  }
 }
