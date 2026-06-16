@@ -3,3 +3,7 @@ dist/
 .env
 # Added by code-review-graph
 .code-review-graph/
+# Local Claude Code artifacts
+.claude/worktrees/
+SCOPE_LOCK.md
+docs/superpowers/plans/
