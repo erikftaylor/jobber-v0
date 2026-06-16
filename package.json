@@ -4,6 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "tsx src/backend/index.ts",
     "test": "vitest",
     "test:ui": "vitest --ui"
   },
@@ -32,6 +35,8 @@
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.6",
     "@vitejs/plugin-react": "^6.0.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
