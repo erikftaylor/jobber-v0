@@ -45,7 +45,7 @@ export class DatabaseService {
   }
 
   private createInitialKnowledgeBase(): void {
-    const id = 'kb-' + uuid().split('-')[0];
+    const id = 'kb-' + uuid().replace(/-/g, '').substring(0, 16);
     const now = new Date().toISOString();
 
     const stmt = this.db.prepare(`
@@ -80,7 +80,7 @@ export class DatabaseService {
     filename: string,
     rawText: string
   ): Document {
-    const id = 'doc-' + uuid().split('-')[0];
+    const id = 'doc-' + uuid().replace(/-/g, '').substring(0, 16);
     const now = new Date();
 
     const stmt = this.db.prepare(`

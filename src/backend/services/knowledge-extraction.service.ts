@@ -122,7 +122,7 @@ export class KnowledgeExtractionService {
   ): ExtractionResult {
     return {
       skills: (extracted.skills || []).map((s: any) => ({
-        id: 'skill-' + uuid().split('-')[0],
+        id: 'skill-' + uuid().replace(/-/g, '').substring(0, 16),
         name: s.name,
         category: s.category,
         years_experience: s.years_experience,
@@ -139,7 +139,7 @@ export class KnowledgeExtractionService {
       })),
 
       achievements: (extracted.achievements || []).map((a: any) => ({
-        id: 'ach-' + uuid().split('-')[0],
+        id: 'ach-' + uuid().replace(/-/g, '').substring(0, 16),
         title: a.title,
         context: a.context,
         metrics: a.metrics || [],
@@ -157,7 +157,7 @@ export class KnowledgeExtractionService {
       })),
 
       technologies: (extracted.technologies || []).map((t: any) => ({
-        id: 'tech-' + uuid().split('-')[0],
+        id: 'tech-' + uuid().replace(/-/g, '').substring(0, 16),
         name: t.name,
         proficiency: t.proficiency,
         confidence: Math.min(1, Math.max(0, t.confidence)),
@@ -173,19 +173,19 @@ export class KnowledgeExtractionService {
       })),
 
       writingStyle: {
-        tone: extracted.writing_style?.tone || 'professional',
-        voice_markers: extracted.writing_style?.voice_markers || [],
-        examples: extracted.writing_style?.examples || [],
+        tone: extracted.writing_style?.tone ?? 'professional',
+        voice_markers: extracted.writing_style?.voice_markers ?? [],
+        examples: extracted.writing_style?.examples ?? [],
         confidence: Math.min(
           1,
-          Math.max(0, extracted.writing_style?.confidence || 0)
+          Math.max(0, extracted.writing_style?.confidence ?? 0)
         ),
         source_refs_json: [
           {
             document_id: documentId,
             excerpt:
               'Inferred from overall document tone and style',
-            confidence: extracted.writing_style?.confidence || 0,
+            confidence: Math.min(1, Math.max(0, extracted.writing_style?.confidence ?? 0)),
           },
         ],
       },

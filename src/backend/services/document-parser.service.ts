@@ -32,7 +32,12 @@ export class DocumentParserService {
   }
 
   private async parseText(filePath: string): Promise<string> {
-    return fs.readFileSync(filePath, 'utf-8');
+    return new Promise((resolve, reject) => {
+      fs.readFile(filePath, 'utf-8', (err, data) => {
+        if (err) reject(err);
+        else resolve(data);
+      });
+    });
   }
 }
 
