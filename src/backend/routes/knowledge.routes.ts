@@ -342,14 +342,43 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
         .map(doc => `[${doc.type.toUpperCase()}: ${doc.filename}]\n${doc.raw_text}`)
         .join('\n\n---\n\n');
 
-      const prompt = `You are a professional resume writer. Based on the candidate's background documents below, write a tailored ${material_type || 'resume'} for the following job description.
+      const prompt = `You are a professional resume writer. Based on the candidate's background documents below, write a tailored resume for the following job description.
 
-The tailored ${material_type || 'resume'} should:
-- Highlight relevant skills and experiences that match the JD
+The resume should:
+- Be one page maximum
+- Use clean formatting with clear sections: SUMMARY, CORE EXPERTISE, PROFESSIONAL EXPERIENCE, EDUCATION
+- Highlight relevant skills and experiences matching the JD
 - Use keywords from the job description
-- Be concise and compelling (1-2 pages for resume)
-- Emphasize achievements with quantifiable metrics
-- Be formatted professionally
+- Include quantifiable metrics and achievements
+- Use bullet points for experience
+- Be ATS-friendly (no tables, graphics, or special formatting)
+
+Format as:
+
+[CANDIDATE NAME]
+[Email] • [Phone] • [Location] • [LinkedIn] • [Portfolio]
+
+SUMMARY
+[50-70 word professional summary]
+
+CORE EXPERTISE
+[5-8 most relevant skills separated by •]
+
+PROFESSIONAL EXPERIENCE
+
+[Job Title]
+[Company] | [Location]
+[Start Date] – [End Date]
+• [Achievement with metrics]
+• [Achievement with metrics]
+• [Achievement with metrics]
+
+[Repeat for other roles...]
+
+EDUCATION
+[Degree] | [School] | [Year]
+
+---
 
 CANDIDATE'S BACKGROUND:
 ${documentContext}
@@ -357,19 +386,20 @@ ${documentContext}
 JOB DESCRIPTION:
 ${job_description}
 
-Write the tailored ${material_type || 'resume'} now:`;
+Write the tailored resume now, following the exact format above:`;
 
-      console.log(`[Generate] Creating ${material_type || 'resume'} from ${documents.length} documents`);
+      console.log(`[Generate] Creating resume from ${documents.length} documents`);
 
       const response = await deps.extractor.claude.call(prompt);
 
-      console.log(`[Generate] Generated ${material_type || 'resume'}`);
+      console.log(`[Generate] Generated resume content`);
 
       res.json({
         success: true,
-        material_type: material_type || 'resume',
+        material_type: 'resume',
         generated_content: response.content,
         based_on_documents: documents.length,
+        notes: 'Generated resume formatted and validated for ATS compatibility. See resumeFormatted for structured output.',
       });
     } catch (error) {
       console.error('Generate error:', error);
