@@ -324,24 +324,46 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
         return;
       }
 
+      // Validate HTML is not too large
+      if (html.length > 10 * 1024 * 1024) {
+        res.status(400).json({ error: 'HTML content too large (max 10MB)' });
+        return;
+      }
+
+      console.log('[PDF] Generating PDF from HTML, size:', html.length, 'bytes');
+
       // Import PDF generator
       const { pdfGenerator } = await import('../services/pdf-generator.service');
 
-      console.log('[PDF] Generating PDF from HTML');
+      try {
+        const pdfBuffer = await Promise.race([
+          pdfGenerator.htmlToPdf(html, filename),
+          new Promise<Buffer>((_, reject) =>
+            setTimeout(() => reject(new Error('PDF generation timeout (30s)')), 30000)
+          ),
+        ]);
 
-      const pdfBuffer = await pdfGenerator.htmlToPdf(html, filename);
+        console.log('[PDF] Generated PDF, size:', Math.round(pdfBuffer.length / 1024), 'KB');
 
-      console.log('[PDF] Generated PDF, size:', Math.round(pdfBuffer.length / 1024), 'KB');
-
-      // Return PDF as file download
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename || 'resume.pdf'}"`);
-      res.send(pdfBuffer);
+        // Return PDF as file download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename || 'resume.pdf'}"`);
+        res.send(pdfBuffer);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error('[PDF] Generation error:', errorMsg);
+        throw err;
+      }
     } catch (error) {
-      console.error('PDF generation error:', error);
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'Failed to generate PDF',
-      });
+      const errorMsg = error instanceof Error ? error.message : 'Failed to generate PDF';
+      console.error('[PDF] Request error:', errorMsg);
+
+      // Don't crash the server, return 500 with error message
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: errorMsg || 'PDF generation failed. Please try again.',
+        });
+      }
     }
   });
 

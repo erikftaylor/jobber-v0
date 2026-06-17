@@ -10,10 +10,27 @@ export class PDFGenerator {
 
   async initialize(): Promise<void> {
     if (!this.browser) {
-      this.browser = await puppeteer.launch({
-        headless: 'new',
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      });
+      try {
+        console.log('[PDFGenerator] Launching browser...');
+        this.browser = await Promise.race([
+          puppeteer.launch({
+            headless: 'new',
+            args: ['--no-sandbox', '--disable-setuid-sandbox'],
+          }),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error('Browser launch timeout after 15 seconds')),
+              15000
+            )
+          ),
+        ]);
+        console.log('[PDFGenerator] Browser launched successfully');
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error('[PDFGenerator] Failed to launch browser:', errorMsg);
+        this.browser = null;
+        throw new Error(`Browser launch failed: ${errorMsg}`);
+      }
     }
   }
 
@@ -28,19 +45,36 @@ export class PDFGenerator {
    * Convert HTML resume to PDF buffer
    */
   async htmlToPdf(html: string, filename?: string): Promise<Buffer> {
-    await this.initialize();
-
-    if (!this.browser) {
-      throw new Error('Browser not initialized');
-    }
-
-    const page = await this.browser.newPage();
+    let page: puppeteer.Page | null = null;
 
     try {
-      await page.setContent(html, {
-        waitUntil: 'networkidle0',
-      });
+      console.log('[PDFGenerator] Initializing...');
+      await this.initialize();
 
+      if (!this.browser) {
+        throw new Error('Browser initialization failed');
+      }
+
+      console.log('[PDFGenerator] Creating page...');
+      page = await this.browser.newPage();
+
+      console.log('[PDFGenerator] Setting content...');
+      try {
+        await Promise.race([
+          page.setContent(html, {
+            waitUntil: 'domcontentloaded',
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Content load timeout')), 10000)
+          ),
+        ]);
+      } catch (err) {
+        console.warn('[PDFGenerator] Content load warning:', err);
+        // Try again with simpler approach
+        await page.setContent(html);
+      }
+
+      console.log('[PDFGenerator] Generating PDF...');
       // PDF options for letter-size, ATS-safe output
       const pdfBuffer = await page.pdf({
         format: 'letter',
@@ -54,9 +88,20 @@ export class PDFGenerator {
         preferCSSPageSize: true,
       });
 
+      console.log('[PDFGenerator] PDF generated successfully');
       return pdfBuffer;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error('[PDFGenerator] Error:', errorMsg);
+      throw new Error(`PDF generation failed: ${errorMsg}`);
     } finally {
-      await page.close();
+      if (page) {
+        try {
+          await page.close();
+        } catch (err) {
+          console.error('[PDFGenerator] Error closing page:', err);
+        }
+      }
     }
   }
 }
