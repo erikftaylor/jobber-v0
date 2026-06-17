@@ -273,35 +273,51 @@ export const App: React.FC = () => {
       }
 
       setExportStatus('Rendering PDF…');
-      const response = await fetch('/api/kb/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          html: htmlToExport,
-          filename: 'resume.pdf',
-        }),
-      });
+      let pdfGenerated = false;
 
-      if (!response.ok) {
-        try {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to generate PDF');
-        } catch (parseErr) {
-          throw new Error(`Failed to generate PDF (HTTP ${response.status})`);
+      try {
+        const response = await fetch('/api/kb/pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            html: htmlToExport,
+            filename: 'resume.pdf',
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('PDF generation failed - falling back to HTML export');
         }
-      }
 
-      setExportStatus('Downloading…');
-      // Download the PDF
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'resume.pdf';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+        setExportStatus('Downloading…');
+        // Download the PDF
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'resume.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        pdfGenerated = true;
+      } catch (pdfErr) {
+        console.warn('[Export] PDF generation failed:', pdfErr);
+        // Fallback: export as HTML that user can print to PDF
+        setExportStatus('Exporting as HTML (print to PDF in browser)…');
+
+        const htmlBlob = new Blob([htmlToExport], { type: 'text/html' });
+        const url = window.URL.createObjectURL(htmlBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'resume.html';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+
+        setError('PDF generation unavailable. HTML file exported instead - open in browser and use Print > Save as PDF.');
+      }
 
       // Mark artifact as exported
       if (currentArtifact) {
