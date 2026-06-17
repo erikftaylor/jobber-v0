@@ -16,7 +16,7 @@ export class ClaudeService {
 
   async call(prompt: string, systemPrompt?: string): Promise<ClaudeResponse> {
     const response = await this.client.messages.create({
-      model: 'claude-opus-4-1',
+      model: 'claude-opus-4-8',
       max_tokens: 2000,
       ...(systemPrompt && { system: systemPrompt }),
       messages: [
