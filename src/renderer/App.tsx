@@ -27,7 +27,9 @@ export const App: React.FC = () => {
   const [newSessionName, setNewSessionName] = useState('');
   const [jobDescription, setJobDescription] = useState('');
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
+  const [generatedHtml, setGeneratedHtml] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     loadSessions();
@@ -179,10 +181,71 @@ export const App: React.FC = () => {
       }
 
       setGeneratedContent(data.generated_content);
+
+      // For now, create a simple HTML version of the resume
+      // When Resume Output Engine is integrated, this will use the formatted HTML
+      const simpleHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Resume</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0.6in; line-height: 1.4; }
+            pre { font-family: Arial, sans-serif; white-space: pre-wrap; word-wrap: break-word; }
+          </style>
+        </head>
+        <body>
+          <pre>${data.generated_content}</pre>
+        </body>
+        </html>
+      `;
+      setGeneratedHtml(simpleHtml);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!generatedHtml) {
+      setError('No resume to export');
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      setError(null);
+
+      const response = await fetch('/api/kb/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html: generatedHtml,
+          filename: 'resume.pdf',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      // Download the PDF
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'resume.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download PDF');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -318,15 +381,25 @@ export const App: React.FC = () => {
                   <p key={i}>{line || <br />}</p>
                 ))}
               </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(generatedContent);
-                  alert('Copied to clipboard!');
-                }}
-                className="btn-secondary"
-              >
-                Copy to Clipboard
-              </button>
+              <div className="button-group">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedContent);
+                    alert('Copied to clipboard!');
+                  }}
+                  className="btn-secondary"
+                >
+                  Copy to Clipboard
+                </button>
+                <button
+                  onClick={handleDownloadPDF}
+                  disabled={isExporting}
+                  className="btn-primary"
+                  title="Download resume as PDF"
+                >
+                  {isExporting ? 'Generating PDF...' : 'Download PDF'}
+                </button>
+              </div>
             </div>
           )}
         </main>
@@ -683,6 +756,15 @@ export const App: React.FC = () => {
 
         .generated-content p {
           margin: 0;
+        }
+
+        .button-group {
+          display: flex;
+          gap: 8px;
+        }
+
+        .button-group button {
+          flex: 1;
         }
 
         .info-panel {

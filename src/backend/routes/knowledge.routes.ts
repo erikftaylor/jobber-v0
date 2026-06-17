@@ -314,6 +314,37 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
     }
   });
 
+  // POST /api/kb/pdf - Convert resume HTML to PDF
+  router.post('/pdf', async (req: Request, res: Response) => {
+    try {
+      const { html, filename } = req.body;
+
+      if (!html) {
+        res.status(400).json({ error: 'HTML resume required' });
+        return;
+      }
+
+      // Import PDF generator
+      const { pdfGenerator } = await import('../services/pdf-generator.service');
+
+      console.log('[PDF] Generating PDF from HTML');
+
+      const pdfBuffer = await pdfGenerator.htmlToPdf(html, filename);
+
+      console.log('[PDF] Generated PDF, size:', Math.round(pdfBuffer.length / 1024), 'KB');
+
+      // Return PDF as file download
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename || 'resume.pdf'}"`);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to generate PDF',
+      });
+    }
+  });
+
   // POST /api/kb/generate - Generate tailored resume for a job description
   router.post('/generate', async (req: Request, res: Response) => {
     try {
