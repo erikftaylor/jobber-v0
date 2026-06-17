@@ -209,7 +209,12 @@ export const App: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate PDF');
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to generate PDF');
+        } catch (parseErr) {
+          throw new Error(`Failed to generate PDF (HTTP ${response.status})`);
+        }
       }
 
       // Download the PDF
