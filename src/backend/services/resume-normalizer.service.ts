@@ -127,6 +127,7 @@ export class ResumeNormalizer {
 
   /**
    * Normalize bullet: remove weak openers, emojis, first-person pronouns
+   * Enforce executive style (strong verbs, clear impact)
    */
   private normalizeBullet(bullet: ResumeBullet | string): ResumeBullet {
     let text = typeof bullet === 'string' ? bullet : bullet.text || '';
@@ -143,17 +144,8 @@ export class ResumeNormalizer {
     // Remove first-person pronouns
     text = text.replace(/\b(I|We|My|Our)\b/g, '').trim();
 
-    // Remove weak openers
-    const weakOpeners = [
-      'responsible for',
-      'helped',
-      'worked with',
-      'was involved in',
-      'participated in',
-      'assisted with',
-      'was able to',
-      'managed to',
-    ];
+    // Remove weak openers from executive style rules
+    const weakOpeners = RESUME_FORMAT.executiveStyle.prohibitedOpeners;
     for (const opener of weakOpeners) {
       text = text.replace(new RegExp(`^${opener}\\s+`, 'i'), '').trim();
     }
@@ -163,13 +155,10 @@ export class ResumeNormalizer {
       text = text.charAt(0).toUpperCase() + text.slice(1);
     }
 
-    // Add bullet character
-    text = `${RESUME_FORMAT.bullets.character} ${text}`;
-
     return {
       text,
       wordCount: this.countWords(text),
-      visualLines: this.estimateVisualLines(text),
+      visualLines: 1, // For executive layout, bullets are minimal visual complexity
     };
   }
 
