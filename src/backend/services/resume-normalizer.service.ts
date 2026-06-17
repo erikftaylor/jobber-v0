@@ -96,7 +96,7 @@ export class ResumeNormalizer {
         seen.add(name);
         return true;
       })
-      .slice(0, RESUME_FORMAT.contentConstraints.skills.maxItems)
+      .slice(0, RESUME_FORMAT.contentConstraints.expertise.maxItems)
       .map((s) => ({
         name: String(s.name || s).trim(),
       }));

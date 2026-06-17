@@ -138,8 +138,8 @@ export class ResumeValidator {
     // Skills count
     if (resume.expertise) {
       const skillCount = resume._stats.skillCount;
-      if (skillCount > RESUME_FORMAT.contentConstraints.skills.maxItems) {
-        warnings.push(`${skillCount} skills listed, max is ${RESUME_FORMAT.contentConstraints.skills.maxItems}`);
+      if (skillCount > RESUME_FORMAT.contentConstraints.expertise.maxItems) {
+        warnings.push(`${skillCount} skills listed, max is ${RESUME_FORMAT.contentConstraints.expertise.maxItems}`);
       }
     }
 

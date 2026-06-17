@@ -81,7 +81,7 @@ describe('Resume Output Engine', () => {
 
       const output = engine.generate(resume);
 
-      expect(output.stats.skillCount).toBeLessThanOrEqual(RESUME_FORMAT.contentConstraints.skills.maxItems);
+      expect(output.stats.skillCount).toBeLessThanOrEqual(RESUME_FORMAT.contentConstraints.expertise.maxItems);
     });
 
     it('should remove weak openers from bullets', () => {
@@ -356,7 +356,7 @@ describe('Resume Output Engine', () => {
         RESUME_FORMAT.contentConstraints.summary.maxWords
       );
       expect(output.stats.skillCount).toBeLessThanOrEqual(
-        RESUME_FORMAT.contentConstraints.skills.maxItems
+        RESUME_FORMAT.contentConstraints.expertise.maxItems
       );
     });
 

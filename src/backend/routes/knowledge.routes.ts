@@ -472,7 +472,10 @@ Now write the tailored executive resume following these rules exactly:`;
           },
         });
       } catch (formatError) {
-        console.error('[Generate] Formatting error:', formatError);
+        const errorMsg = formatError instanceof Error ? formatError.message : String(formatError);
+        const errorStack = formatError instanceof Error ? formatError.stack : '';
+        console.error('[Generate] Formatting error:', errorMsg);
+        if (errorStack) console.error('[Generate] Stack:', errorStack);
         // Fallback: return raw content without formatting
         res.json({
           success: true,
@@ -480,7 +483,7 @@ Now write the tailored executive resume following these rules exactly:`;
           generated_content: response.content,
           formatted_html: null,
           based_on_documents: documents.length,
-          formatting_error: formatError instanceof Error ? formatError.message : 'Failed to format resume',
+          formatting_error: errorMsg,
         });
       }
     } catch (error) {
