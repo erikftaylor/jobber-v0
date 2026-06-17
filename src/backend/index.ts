@@ -1,3 +1,4 @@
+import dotenv from 'dotenv';
 import express from 'express';
 import path from 'path';
 import { DatabaseService } from './services/database.service';
@@ -6,6 +7,8 @@ import { KnowledgeExtractionService } from './services/knowledge-extraction.serv
 import { KnowledgeSynthesisService } from './services/knowledge-synthesis.service';
 import { ClaudeService } from './services/claude.service';
 import { createKnowledgeRoutes } from './routes/knowledge.routes';
+
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;

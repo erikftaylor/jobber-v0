@@ -36,9 +36,9 @@ export class ResumeNormalizer {
     }
 
     if (normalized.experience) {
+      const totalRoles = normalized.experience.roles.length;
       normalized.experience.roles = normalized.experience.roles.map((role, idx) => {
-        const isOldest = idx === normalized.experience!.roles.length - 1;
-        return this.normalizeRole(role, isOldest);
+        return this.normalizeRole(role, idx, totalRoles);
       });
       normalized._stats.experienceRoles = normalized.experience.roles.length;
       normalized._stats.totalBullets = normalized.experience.roles.reduce(
@@ -105,15 +105,10 @@ export class ResumeNormalizer {
   }
 
   /**
-   * Normalize role: enforce bullet counts based on role age
+   * Normalize role: enforce bullet counts based on role position
    */
-  private normalizeRole(role: any, isOldest: boolean) {
-    const isCurrent = role.isCurrent || !role.endDate;
-    const bulletLimits = isOldest
-      ? RESUME_FORMAT.contentConstraints.bullets.older
-      : isCurrent
-        ? RESUME_FORMAT.contentConstraints.bullets.current
-        : RESUME_FORMAT.contentConstraints.bullets.previous;
+  private normalizeRole(role: any, roleIndex: number, totalRoles: number) {
+    const bulletLimits = this.getConstraintsForRole(roleIndex, totalRoles);
 
     const normalizedBullets = role.bullets
       .map((bullet: any) => this.normalizeBullet(bullet))
@@ -177,6 +172,22 @@ export class ResumeNormalizer {
     const charsPerLine = 80;
     const lines = Math.ceil(text.length / charsPerLine);
     return Math.max(1, Math.min(lines, RESUME_FORMAT.bullets.maxVisualLines));
+  }
+
+  /**
+   * Get content constraints for a role by position
+   */
+  private getConstraintsForRole(roleIndex: number, totalRoles: number) {
+    const isNewest = roleIndex === 0;
+    const isOldest = roleIndex === totalRoles - 1;
+
+    if (isOldest && roleIndex > 0) {
+      return RESUME_FORMAT.contentConstraints.bullets.older;
+    } else if (isNewest) {
+      return RESUME_FORMAT.contentConstraints.bullets.current;
+    } else {
+      return RESUME_FORMAT.contentConstraints.bullets.previous;
+    }
   }
 
   /**

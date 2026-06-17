@@ -168,18 +168,51 @@ export class ResumeValidator {
    * Validate margins match specification
    */
   private validateMargins(): boolean {
-    // In actual PDF rendering, this would be verified
-    // For now, we assume correct if structure is valid
-    return true;
+    // Margins are enforced at render time via CSS/template
+    // Check that document structure would allow proper margins
+    return RESUME_FORMAT.margins.top >= RESUME_FORMAT.minimums.marginInches &&
+           RESUME_FORMAT.margins.bottom >= RESUME_FORMAT.minimums.marginInches &&
+           RESUME_FORMAT.margins.left >= RESUME_FORMAT.minimums.marginInches &&
+           RESUME_FORMAT.margins.right >= RESUME_FORMAT.minimums.marginInches;
   }
 
   /**
    * Validate typography matches specification
    */
   private validateTypography(resume: NormalizedResume): boolean {
-    // In actual PDF rendering, this would be verified
-    // For now, we assume correct if structure is valid
-    return true;
+    // Font sizes and weights are enforced at render time
+    // Check that minimum font sizes are met
+    const minFontSize = RESUME_FORMAT.minimums.fontSize;
+    const hasSmallFont =
+      RESUME_FORMAT.fontSizes.body < minFontSize ||
+      RESUME_FORMAT.fontSizes.bullets < minFontSize;
+
+    return !hasSmallFont;
+  }
+
+  /**
+   * Validate ATS-safe rendering rules
+   */
+  validateATS(resume: NormalizedResume): { safe: boolean; issues: string[] } {
+    const issues: string[] = [];
+
+    // Check for prohibited elements in rendered text
+    const allText = this.extractAllText(resume);
+    const lowerText = allText.toLowerCase();
+
+    // Check for layout violations in content
+    if (/\|{2,}|\t{2,}/.test(allText)) {
+      issues.push('Content contains column/tab separators (not ATS-safe)');
+    }
+
+    if (/justify|center|right\salign/i.test(allText)) {
+      issues.push('Content mentions justified/centered alignment (must be left-aligned)');
+    }
+
+    return {
+      safe: issues.length === 0,
+      issues,
+    };
   }
 
   /**

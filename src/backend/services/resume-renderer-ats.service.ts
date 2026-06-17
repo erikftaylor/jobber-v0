@@ -1,7 +1,7 @@
 /**
- * Resume Output Engine v2 - Modern Executive Product Design Renderer
- * Deterministic single-column layout with typography-driven hierarchy
- * No tables, no boxes, no visual clutter - clean and minimalist
+ * ATS Resume Renderer
+ * Renders resumes deterministically using centralized RESUME_FORMAT tokens
+ * Single-column, left-aligned, ATS-safe layout with embedded format specifications
  */
 
 import { RESUME_FORMAT } from '../../shared/resumeFormat';
@@ -9,8 +9,8 @@ import type { NormalizedResume } from '../../shared/resumeTypes';
 
 export class ATSResumeRenderer {
   /**
-   * Render resume to clean, minimalist HTML
-   * Single column, left-aligned, typography-driven
+   * Render resume as searchable HTML
+   * Uses centralized format tokens for deterministic output
    */
   renderHTML(resume: NormalizedResume): string {
     const html = `<!DOCTYPE html>
@@ -37,10 +37,12 @@ export class ATSResumeRenderer {
   }
 
   /**
-   * Render CSS - minimal, clean typography-driven styles
+   * Render CSS from centralized format specification
+   * All typography, spacing, margins, and colors from RESUME_FORMAT tokens
    */
   private renderStyles(): string {
     const fmt = RESUME_FORMAT;
+    const fontStack = fmt.fonts.fallbackStack.map(f => `"${f}"`).join(', ');
 
     return `
       * {
@@ -50,7 +52,7 @@ export class ATSResumeRenderer {
       }
 
       html, body {
-        font-family: ${fmt.fonts.fallbackStack.map((f) => `"${f}"`).join(', ')};
+        font-family: ${fontStack};
         color: ${fmt.colors.text};
         background: ${fmt.colors.background};
       }
@@ -64,104 +66,145 @@ export class ATSResumeRenderer {
         color: ${fmt.colors.text};
         font-size: ${fmt.fontSizes.body}pt;
         line-height: ${fmt.lineHeights.body};
+        text-align: ${fmt.document.alignment};
       }
 
-      /* HEADER - Name only, left aligned */
+      /* Header - Name and contact */
       .resume-header {
-        margin-bottom: ${fmt.spacing.nameMarginBottom}px;
+        margin-bottom: ${fmt.spacing.contactAfter}pt;
       }
 
       .resume-name {
         font-size: ${fmt.fontSizes.name}pt;
         font-weight: ${fmt.fontWeights.name};
         color: ${fmt.colors.text};
+        margin-bottom: 4pt;
         line-height: ${fmt.lineHeights.name};
-        margin: 0;
       }
 
-      /* SECTION HEADERS - Uppercase, bold, left aligned, no border */
+      .resume-contact {
+        font-size: ${fmt.fontSizes.contact}pt;
+        color: ${fmt.colors.secondary};
+        line-height: ${fmt.lineHeights.contact};
+      }
+
+      /* Section headings */
       .section-title {
         font-size: ${fmt.fontSizes.sectionHeading}pt;
         font-weight: ${fmt.fontWeights.sectionHeading};
         color: ${fmt.colors.text};
-        text-transform: uppercase;
-        margin-top: ${fmt.spacing.sectionMarginTop}px;
-        margin-bottom: ${fmt.spacing.sectionMarginBottom}px;
+        text-align: left;
+        margin-top: ${fmt.spacing.sectionBefore}pt;
+        margin-bottom: ${fmt.spacing.sectionAfter}pt;
         line-height: ${fmt.lineHeights.sectionHeading};
         page-break-after: avoid;
       }
 
-      /* SUMMARY */
+      /* Summary */
       .resume-summary {
         font-size: ${fmt.fontSizes.body}pt;
-        line-height: ${fmt.lineHeights.body};
         color: ${fmt.colors.text};
-        margin-bottom: ${fmt.spacing.sectionMarginTop}px;
-      }
-
-      /* EXPERTISE - Vertical list */
-      .resume-expertise {
-        margin-bottom: ${fmt.spacing.sectionMarginTop}px;
-      }
-
-      .expertise-item {
-        font-size: ${fmt.fontSizes.body}pt;
         line-height: ${fmt.lineHeights.body};
-        color: ${fmt.colors.text};
-        margin-bottom: ${fmt.spacing.expertiseItemMargin}px;
+        margin-bottom: ${fmt.spacing.paragraphAfter}pt;
       }
 
-      /* JOB BLOCKS - No tables, block-based layout */
+      /* Experience */
       .job-block {
-        margin-bottom: ${fmt.spacing.jobBlockMargin}px;
+        margin-bottom: ${fmt.spacing.roleBlockAfter}pt;
         page-break-inside: avoid;
+      }
+
+      .job-company {
+        font-size: ${fmt.fontSizes.company}pt;
+        font-weight: ${fmt.fontWeights.company};
+        color: ${fmt.colors.text};
+        margin-bottom: 0;
+        line-height: ${fmt.lineHeights.sectionHeading};
+      }
+
+      .job-title {
+        font-size: ${fmt.fontSizes.jobTitle}pt;
+        font-weight: ${fmt.fontWeights.jobTitle};
+        color: ${fmt.colors.text};
+        margin-bottom: 0;
+        line-height: ${fmt.lineHeights.sectionHeading};
+      }
+
+      .job-location {
+        font-size: ${fmt.fontSizes.body}pt;
+        color: ${fmt.colors.secondary};
+        margin-bottom: ${fmt.spacing.bulletAfter}pt;
       }
 
       .job-dates {
         font-size: ${fmt.fontSizes.dates}pt;
         font-weight: ${fmt.fontWeights.dates};
-        color: ${fmt.colors.text};
-        line-height: ${fmt.lineHeights.dates};
-        margin-bottom: ${fmt.spacing.dateMarginBottom}px;
+        color: ${fmt.colors.secondary};
+        margin-bottom: ${fmt.spacing.bulletAfter}pt;
       }
 
-      /* BULLETS */
       .job-bullets {
         margin: 0;
-        padding-left: ${fmt.spacing.bulletIndent}px;
+        padding-left: ${fmt.bullets.indent}in;
         list-style: disc;
       }
 
       .job-bullets li {
-        font-size: ${fmt.fontSizes.body}pt;
-        line-height: ${fmt.lineHeights.body};
+        font-size: ${fmt.fontSizes.bullets}pt;
         color: ${fmt.colors.text};
-        margin-bottom: ${fmt.spacing.bulletMargin}px;
+        line-height: ${fmt.lineHeights.bullets};
+        margin-bottom: ${fmt.spacing.bulletAfter}pt;
       }
 
-      /* EDUCATION - Compact single-line entries */
+      /* Expertise/Skills */
+      .resume-expertise {
+        margin-bottom: ${fmt.spacing.paragraphAfter}pt;
+      }
+
+      .expertise-item {
+        font-size: ${fmt.fontSizes.body}pt;
+        color: ${fmt.colors.text};
+        line-height: ${fmt.lineHeights.body};
+        margin-bottom: ${fmt.spacing.bulletAfter}pt;
+      }
+
+      /* Education */
       .edu-block {
-        margin-bottom: ${fmt.spacing.educationItemMargin}px;
+        margin-bottom: ${fmt.spacing.roleBlockAfter}pt;
         page-break-inside: avoid;
       }
 
-      .edu-entry {
+      .edu-degree {
         font-size: ${fmt.fontSizes.body}pt;
-        line-height: ${fmt.lineHeights.body};
+        font-weight: 700;
         color: ${fmt.colors.text};
+        line-height: ${fmt.lineHeights.body};
+        margin-bottom: 0;
       }
 
-      /* PAGE BREAK RULES */
+      .edu-school {
+        font-size: ${fmt.fontSizes.body}pt;
+        color: ${fmt.colors.text};
+        line-height: ${fmt.lineHeights.body};
+        margin-bottom: 0;
+      }
+
+      .edu-year {
+        font-size: ${fmt.fontSizes.dates}pt;
+        color: ${fmt.colors.secondary};
+        line-height: ${fmt.lineHeights.contact};
+      }
+
+      /* Print optimization */
       @media print {
         * {
           background: transparent !important;
           color: #000 !important;
           box-shadow: none !important;
-          text-shadow: none !important;
         }
 
         body, html {
-          background: white;
+          background: ${fmt.colors.background};
           color: #000;
         }
 
@@ -169,34 +212,18 @@ export class ATSResumeRenderer {
           width: 100%;
           height: auto;
           margin: 0;
-          padding: 0.6in;
-          background: white;
+          background: ${fmt.colors.background};
         }
 
-        .job-block {
-          page-break-inside: avoid;
-        }
-
-        .edu-block {
+        .job-block, .edu-block {
           page-break-inside: avoid;
         }
 
         .section-title {
           page-break-after: avoid;
         }
-
-        a {
-          text-decoration: underline;
-        }
-
-        /* Remove any borders that don't print well */
-        hr {
-          border: none;
-          border-top: 1px solid #000;
-        }
       }
 
-      /* PRINT MARGINS */
       @page {
         margin: ${fmt.margins.top}in ${fmt.margins.right}in ${fmt.margins.bottom}in ${fmt.margins.left}in;
         size: letter;
@@ -205,56 +232,62 @@ export class ATSResumeRenderer {
   }
 
   /**
-   * Render header - name only, left aligned
+   * Render header - name and contact information
    */
   private renderHeader(contact: any): string {
+    const contactParts = [];
+    if (contact.email) contactParts.push(this.escapeHTML(contact.email));
+    if (contact.phone) contactParts.push(this.escapeHTML(contact.phone));
+    if (contact.location) contactParts.push(this.escapeHTML(contact.location));
+
     return `
       <div class="resume-header">
         <div class="resume-name">${this.escapeHTML(contact.name || 'Your Name')}</div>
+        <div class="resume-contact">${contactParts.join(' • ')}</div>
       </div>
     `;
   }
 
   /**
-   * Render summary - executive positioning statement
+   * Render summary section
    */
   private renderSummary(summary: any): string {
     return `
-      <div class="section-title">Summary</div>
+      <div class="section-title">SUMMARY</div>
       <p class="resume-summary">${this.escapeHTML(summary.text)}</p>
     `;
   }
 
   /**
-   * Render expertise - vertical list, no ratings
+   * Render expertise/skills section
    */
   private renderExpertise(skills: any[]): string {
-    const expertiseItems = skills
-      .map((s) => `<div class="expertise-item">${this.escapeHTML(s.name)}</div>`)
-      .join('');
-
-    return `
-      <div class="section-title">Core Expertise</div>
-      <div class="resume-expertise">${expertiseItems}</div>
-    `;
+    let html = `<div class="section-title">CORE EXPERTISE</div>`;
+    const skillNames = skills.map(s => this.escapeHTML(s.name)).join(' • ');
+    html += `<p class="expertise-item">${skillNames}</p>`;
+    return html;
   }
 
   /**
-   * Render professional experience - dates on separate line, then bullets
+   * Render professional experience section
    */
   private renderExperience(experience: any): string {
-    let html = `<div class="section-title">Professional Experience</div>`;
+    let html = `<div class="section-title">PROFESSIONAL EXPERIENCE</div>`;
 
     for (const role of experience.roles) {
-      const dateRange = `${this.escapeHTML(role.startDate || '')}${
-        role.endDate ? ` – ${this.escapeHTML(role.endDate)}` : ''
-      }`.trim();
+      const dateRange = `${role.startDate || ''}${role.endDate ? ` – ${role.endDate}` : ''}`.trim();
 
       html += `
         <div class="job-block">
-          ${dateRange ? `<div class="job-dates">${dateRange}</div>` : ''}
+          <div class="job-company">${this.escapeHTML(role.company || '')}</div>
+          <div class="job-title">${this.escapeHTML(role.jobTitle || '')}</div>
+          ${role.location ? `<div class="job-location">${this.escapeHTML(role.location)}</div>` : ''}
+          ${dateRange ? `<div class="job-dates">${this.escapeHTML(dateRange)}</div>` : ''}
           <ul class="job-bullets">
-            ${role.bullets.map((bullet: any) => `<li>${this.escapeHTML(bullet.text)}</li>`).join('')}
+            ${role.bullets.map((bullet: any) => {
+              const text = typeof bullet === 'string' ? bullet : bullet.text || '';
+              return `<li>${this.escapeHTML(text)}</li>`;
+            }).join('')}
           </ul>
         </div>
       `;
@@ -264,18 +297,19 @@ export class ATSResumeRenderer {
   }
 
   /**
-   * Render education - compact single-line entries
+   * Render education section
    */
   private renderEducation(education: any[]): string {
-    let html = `<div class="section-title">Education</div>`;
+    let html = `<div class="section-title">EDUCATION</div>`;
 
     for (const edu of education) {
-      const parts: string[] = [];
-      if (edu.degree) parts.push(this.escapeHTML(edu.degree));
-      if (edu.school) parts.push(this.escapeHTML(edu.school));
-      if (edu.year) parts.push(this.escapeHTML(edu.year));
-
-      html += `<div class="edu-block"><div class="edu-entry">${parts.join(' • ')}</div></div>`;
+      html += `
+        <div class="edu-block">
+          <div class="edu-degree">${this.escapeHTML(edu.degree || '')}</div>
+          <div class="edu-school">${this.escapeHTML(edu.school || '')}</div>
+          ${edu.year ? `<div class="edu-year">${this.escapeHTML(edu.year)}</div>` : ''}
+        </div>
+      `;
     }
 
     return html;
