@@ -120,7 +120,7 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
     }
   });
 
-  // POST /api/kb/upload - Upload a document
+  // POST /api/kb/upload - Upload a document (stored as context for generation)
   router.post(
     '/upload',
     upload.single('file'),
@@ -140,59 +140,21 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
         // Parse the uploaded file
         const rawText = await parser.parseFile(req.file.path, req.file.originalname);
 
-        // Save to database
+        // Save to database as context for later use
         const doc = db.saveDocument(documentType, req.file.originalname, rawText);
 
-        // Auto-trigger extraction if extractor and synthesizer are available
-        let extraction = null;
-        if (deps.extractor && deps.synthesizer) {
-          try {
-            console.log(`[Upload] Auto-extracting knowledge from ${doc.id}`);
-            extraction = await deps.extractor.extractFromDocument(doc.id, rawText, req.file.originalname);
-
-            // Get all documents for synthesis
-            const allDocs = db.getAllDocuments();
-            console.log(`[Upload] Synthesizing knowledge from ${allDocs.length} documents`);
-
-            // Extract from all documents
-            const extractions = await Promise.all(
-              allDocs.map(d => deps.extractor.extractFromDocument(d.id, d.raw_text, d.filename))
-            );
-
-            // Synthesize
-            const synthesized = deps.synthesizer.synthesize(extractions);
-
-            // Update KB
-            const updated = db.updateKnowledgeBase(
-              synthesized.skills,
-              synthesized.achievements,
-              synthesized.technologies,
-              synthesized.writingStyle,
-              synthesized.values,
-              new Date(),
-              new Date()
-            );
-
-            console.log(`[Upload] KB updated: ${synthesized.skills.length} skills, ${synthesized.achievements.length} achievements`);
-            extraction = updated;
-          } catch (extractError) {
-            console.error('[Upload] Extraction failed, continuing:', extractError);
-          }
-        }
+        console.log(`[Upload] Stored ${documentType}: ${req.file.originalname} (${rawText.length} chars)`);
 
         res.json({
           success: true,
+          message: 'Document stored and ready for tailored generation',
           document: {
             id: doc.id,
             type: doc.type,
             filename: doc.filename,
             uploaded_at: doc.uploaded_at,
+            size_chars: rawText.length,
           },
-          extracted: extraction ? {
-            skills: extraction.skills.length,
-            achievements: extraction.achievements.length,
-            technologies: extraction.technologies.length,
-          } : null,
         });
       } catch (error) {
         console.error('Upload error:', error);
@@ -203,23 +165,30 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
     }
   );
 
-  // GET /api/kb - Get current knowledge base
+  // GET /api/kb - Get documents as context for generation
   router.get('/', (req: Request, res: Response) => {
     try {
-      const kb = db.getKnowledgeBase();
-      if (!kb) {
-        res.status(404).json({ error: 'Knowledge base not found' });
-        return;
-      }
+      const documents = db.getAllDocuments();
 
       res.json({
         success: true,
-        knowledgeBase: kb,
+        documents: documents.map(doc => ({
+          id: doc.id,
+          type: doc.type,
+          filename: doc.filename,
+          size_chars: doc.raw_text.length,
+          uploaded_at: doc.uploaded_at,
+        })),
+        context: {
+          total_documents: documents.length,
+          total_chars: documents.reduce((sum, d) => sum + d.raw_text.length, 0),
+          ready_for_generation: documents.length > 0,
+        },
       });
     } catch (error) {
       console.error('Get KB error:', error);
       res.status(500).json({
-        error: error instanceof Error ? error.message : 'Failed to get knowledge base',
+        error: error instanceof Error ? error.message : 'Failed to get documents',
       });
     }
   });
@@ -341,6 +310,71 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
         error: errorMsg,
         success: false,
         message: 'Failed to refresh knowledge base',
+      });
+    }
+  });
+
+  // POST /api/kb/generate - Generate tailored resume for a job description
+  router.post('/generate', async (req: Request, res: Response) => {
+    try {
+      if (!deps.extractor) {
+        res.status(501).json({
+          error: 'Claude API not configured - cannot generate materials',
+          success: false,
+        });
+        return;
+      }
+
+      const { job_description, material_type } = req.body;
+      if (!job_description) {
+        res.status(400).json({ error: 'Job description required' });
+        return;
+      }
+
+      const documents = db.getAllDocuments();
+      if (documents.length === 0) {
+        res.status(400).json({ error: 'No documents uploaded - upload your background documents first' });
+        return;
+      }
+
+      // Build context from uploaded documents
+      const documentContext = documents
+        .map(doc => `[${doc.type.toUpperCase()}: ${doc.filename}]\n${doc.raw_text}`)
+        .join('\n\n---\n\n');
+
+      const prompt = `You are a professional resume writer. Based on the candidate's background documents below, write a tailored ${material_type || 'resume'} for the following job description.
+
+The tailored ${material_type || 'resume'} should:
+- Highlight relevant skills and experiences that match the JD
+- Use keywords from the job description
+- Be concise and compelling (1-2 pages for resume)
+- Emphasize achievements with quantifiable metrics
+- Be formatted professionally
+
+CANDIDATE'S BACKGROUND:
+${documentContext}
+
+JOB DESCRIPTION:
+${job_description}
+
+Write the tailored ${material_type || 'resume'} now:`;
+
+      console.log(`[Generate] Creating ${material_type || 'resume'} from ${documents.length} documents`);
+
+      const response = await deps.extractor.claude.call(prompt);
+
+      console.log(`[Generate] Generated ${material_type || 'resume'}`);
+
+      res.json({
+        success: true,
+        material_type: material_type || 'resume',
+        generated_content: response.content,
+        based_on_documents: documents.length,
+      });
+    } catch (error) {
+      console.error('Generate error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to generate materials',
       });
     }
   });

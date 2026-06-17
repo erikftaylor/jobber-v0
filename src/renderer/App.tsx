@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { UploadZone } from './components/UploadZone';
-import { KnowledgeBaseBrowser } from './components/KnowledgeBaseBrowser';
-import type { KnowledgeBase, Document } from '../shared/types';
+import type { Document } from '../shared/types';
 
 interface Session {
   id: string;
@@ -9,20 +8,30 @@ interface Session {
   created_at: Date;
 }
 
+interface DocumentItem {
+  id: string;
+  type: Document['type'];
+  filename: string;
+  size_chars: number;
+  uploaded_at: Date;
+}
+
 export const App: React.FC = () => {
-  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase | null>(null);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [isLoadingKB, setIsLoadingKB] = useState(true);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSession, setActiveSession] = useState<string>('default');
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
+  const [jobDescription, setJobDescription] = useState('');
+  const [generatedContent, setGeneratedContent] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  // Load knowledge base and sessions on mount
   useEffect(() => {
     loadSessions();
-    loadKnowledgeBase();
+    loadDocuments();
   }, []);
 
   const loadSessions = async () => {
@@ -37,17 +46,47 @@ export const App: React.FC = () => {
     }
   };
 
-  const loadKnowledgeBase = async () => {
+  const loadDocuments = async () => {
     try {
-      setIsLoadingKB(true);
+      setIsLoadingDocs(true);
       const response = await fetch('/api/kb');
-      if (!response.ok) throw new Error('Failed to load knowledge base');
+      if (!response.ok) throw new Error('Failed to load documents');
       const data = await response.json();
-      setKnowledgeBase(data.knowledgeBase);
+      setDocuments(data.documents || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setIsLoadingKB(false);
+      setIsLoadingDocs(false);
+    }
+  };
+
+  const handleUpload = async (file: File, type: Document['type']) => {
+    try {
+      setIsUploading(true);
+      setError(null);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', type);
+
+      const response = await fetch('/api/kb/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      await loadDocuments();
+      setError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      setError(msg);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -63,7 +102,7 @@ export const App: React.FC = () => {
       setNewSessionName('');
       setShowNewSession(false);
       await loadSessions();
-      await loadKnowledgeBase();
+      await loadDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
     }
@@ -76,7 +115,7 @@ export const App: React.FC = () => {
       });
       if (!response.ok) throw new Error('Failed to switch session');
       setActiveSession(sessionId);
-      await loadKnowledgeBase();
+      await loadDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to switch session');
     }
@@ -90,7 +129,7 @@ export const App: React.FC = () => {
       });
       if (!response.ok) throw new Error('Failed to delete session');
       await loadSessions();
-      await loadKnowledgeBase();
+      await loadDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete session');
     }
@@ -103,48 +142,60 @@ export const App: React.FC = () => {
         method: 'POST',
       });
       if (!response.ok) throw new Error('Failed to clear session');
-      await loadKnowledgeBase();
+      await loadDocuments();
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to clear session');
     }
   };
 
-  const handleUpload = async (file: File, type: Document['type']) => {
+  const handleGenerate = async () => {
+    if (!jobDescription.trim()) {
+      setError('Please paste a job description');
+      return;
+    }
+    if (documents.length === 0) {
+      setError('Upload documents first');
+      return;
+    }
+
     try {
-      setIsUploading(true);
+      setIsGenerating(true);
       setError(null);
 
-      console.log('Uploading:', { filename: file.name, type, size: file.size });
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', type);
-
-      console.log('Sending fetch to /api/kb/upload');
-      const response = await fetch('/api/kb/upload', {
+      const response = await fetch('/api/kb/generate', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_description: jobDescription,
+          material_type: 'resume',
+        }),
       });
 
-      console.log('Response status:', response.status);
       const data = await response.json();
-      console.log('Response data:', data);
 
       if (!response.ok) {
-        throw new Error(data.error || 'Upload failed');
+        throw new Error(data.error || 'Generation failed');
       }
 
-      console.log('Upload successful, reloading KB');
-      // Reload knowledge base after successful upload
-      await loadKnowledgeBase();
-      console.log('KB reloaded');
+      setGeneratedContent(data.generated_content);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Upload failed';
-      console.error('Upload error:', msg);
-      setError(msg);
+      setError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
-      setIsUploading(false);
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    if (!confirm('Delete this document?')) return;
+    try {
+      const response = await fetch(`/api/kb/documents/${docId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete document');
+      await loadDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete document');
     }
   };
 
@@ -198,23 +249,95 @@ export const App: React.FC = () => {
       <div className="app-layout">
         <aside className="left-panel">
           <UploadZone onUpload={handleUpload} isLoading={isUploading} />
-          <KnowledgeBaseBrowser knowledgeBase={knowledgeBase} isLoading={isLoadingKB} />
+
+          <div className="documents-panel">
+            <h3>Uploaded Documents ({documents.length})</h3>
+            {isLoadingDocs ? (
+              <p className="loading">Loading...</p>
+            ) : documents.length === 0 ? (
+              <p className="empty">No documents uploaded yet</p>
+            ) : (
+              <div className="documents-list">
+                {documents.map(doc => (
+                  <div key={doc.id} className="document-item">
+                    <div className="doc-info">
+                      <p className="doc-name">{doc.filename}</p>
+                      <p className="doc-type">{doc.type.replace('_', ' ')}</p>
+                      <p className="doc-size">{Math.round(doc.size_chars / 1000)}KB</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteDocument(doc.id)}
+                      className="btn-small-danger"
+                      title="Delete document"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </aside>
 
         <main className="center-panel">
-          <div className="placeholder">
-            <h2>Resume & Cover Letter Generator</h2>
-            <p>Coming soon...</p>
-            <p className="subtitle">
-              Paste a job description to generate tailored resume and cover letter
-            </p>
+          <div className="generator-section">
+            <h2>Generate Tailored Resume</h2>
+            <div className="generator-form">
+              <label>Job Description</label>
+              <textarea
+                value={jobDescription}
+                onChange={(e) => setJobDescription(e.target.value)}
+                placeholder="Paste the job description here..."
+                rows={8}
+                disabled={isGenerating}
+              />
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerating || documents.length === 0}
+                className="btn-primary btn-large"
+              >
+                {isGenerating ? 'Generating...' : 'Generate Resume'}
+              </button>
+            </div>
           </div>
+
+          {generatedContent && (
+            <div className="generated-section">
+              <h2>Generated Resume</h2>
+              <div className="generated-content">
+                {generatedContent.split('\n').map((line, i) => (
+                  <p key={i}>{line || <br />}</p>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(generatedContent);
+                  alert('Copied to clipboard!');
+                }}
+                className="btn-secondary"
+              >
+                Copy to Clipboard
+              </button>
+            </div>
+          )}
         </main>
 
         <aside className="right-panel">
-          <div className="placeholder">
-            <h2>Document Preview</h2>
-            <p>Coming soon...</p>
+          <div className="info-panel">
+            <h3>How it works</h3>
+            <ol>
+              <li>Upload your background documents (resume, case studies, etc.)</li>
+              <li>Paste a job description</li>
+              <li>Click Generate Resume</li>
+              <li>Claude tailors a resume to match the job</li>
+            </ol>
+            <p className="context-info">
+              📄 <strong>{documents.length} document{documents.length !== 1 ? 's' : ''}</strong> uploaded
+              <br/>
+              {documents.length > 0 && (
+                <>Total: {Math.round(documents.reduce((sum, d) => sum + d.size_chars, 0) / 1000)}KB</>
+              )}
+            </p>
           </div>
         </aside>
       </div>
@@ -314,7 +437,7 @@ export const App: React.FC = () => {
           cursor: pointer;
         }
 
-        .btn-primary, .btn-secondary, .btn-danger {
+        .btn-primary, .btn-secondary, .btn-danger, .btn-small-danger {
           padding: 6px 12px;
           border: none;
           border-radius: 4px;
@@ -329,8 +452,19 @@ export const App: React.FC = () => {
           color: white;
         }
 
-        .btn-primary:hover {
+        .btn-primary:hover:not(:disabled) {
           opacity: 0.9;
+        }
+
+        .btn-primary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .btn-large {
+          padding: 12px 24px !important;
+          font-size: 14px !important;
+          width: 100%;
         }
 
         .btn-secondary {
@@ -352,6 +486,18 @@ export const App: React.FC = () => {
 
         .btn-danger:hover {
           opacity: 0.9;
+        }
+
+        .btn-small-danger {
+          padding: 4px 8px !important;
+          font-size: 12px !important;
+          background: transparent;
+          color: var(--danger-text);
+          border: 1px solid var(--border-color);
+        }
+
+        .btn-small-danger:hover {
+          background: var(--danger-bg);
         }
 
         .new-session-form {
@@ -382,7 +528,7 @@ export const App: React.FC = () => {
 
         .app-layout {
           display: grid;
-          grid-template-columns: 25% 35% 40%;
+          grid-template-columns: 25% 50% 25%;
           flex: 1;
           overflow: hidden;
           gap: 0;
@@ -391,61 +537,166 @@ export const App: React.FC = () => {
         .left-panel,
         .center-panel,
         .right-panel {
-          overflow: hidden;
+          overflow: auto;
           display: flex;
           flex-direction: column;
-        }
-
-        .left-panel {
           border-right: 1px solid var(--border-color);
         }
 
-        .center-panel {
-          border-right: 1px solid var(--border-color);
+        .right-panel {
+          border-right: none;
         }
 
-        .placeholder {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          height: 100%;
+        .documents-panel {
+          padding: 20px;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .documents-panel h3 {
+          margin: 0 0 12px 0;
+          font-size: 14px;
           color: var(--text-secondary);
+        }
+
+        .documents-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .document-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background: var(--bg-secondary);
+          font-size: 13px;
+        }
+
+        .doc-info {
+          flex: 1;
+        }
+
+        .doc-name {
+          margin: 0 0 4px 0;
+          font-weight: 500;
+          color: var(--text-primary);
+          word-break: break-word;
+        }
+
+        .doc-type {
+          margin: 0;
+          font-size: 12px;
+          color: var(--text-secondary);
+          text-transform: capitalize;
+        }
+
+        .doc-size {
+          margin: 2px 0 0 0;
+          font-size: 11px;
+          color: var(--text-secondary);
+        }
+
+        .empty, .loading {
+          color: var(--text-secondary);
+          font-size: 13px;
           text-align: center;
+          padding: 20px;
+        }
+
+        .generator-section {
           padding: 24px;
         }
 
-        .placeholder h2 {
-          margin: 0 0 8px 0;
-          color: var(--text-primary);
+        .generator-section h2 {
+          margin: 0 0 16px 0;
+          font-size: 18px;
         }
 
-        .placeholder p {
-          margin: 4px 0;
+        .generator-form {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
         }
 
-        .placeholder .subtitle {
+        .generator-form label {
           font-size: 13px;
-          margin-top: 8px;
+          font-weight: 500;
+          color: var(--text-secondary);
         }
 
-        @media (max-width: 1200px) {
-          .app-layout {
-            grid-template-columns: 1fr;
-          }
+        .generator-form textarea {
+          padding: 12px;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background: var(--input-bg);
+          color: var(--text-primary);
+          font-family: monospace;
+          font-size: 13px;
+          resize: vertical;
+        }
 
-          .left-panel,
-          .center-panel,
-          .right-panel {
-            border-right: none;
-            display: none;
-          }
+        .generator-form textarea:disabled {
+          opacity: 0.6;
+        }
 
-          .left-panel.active,
-          .center-panel.active,
-          .right-panel.active {
-            display: flex;
-          }
+        .generated-section {
+          padding: 24px;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .generated-section h2 {
+          margin: 0 0 16px 0;
+          font-size: 18px;
+        }
+
+        .generated-content {
+          background: var(--bg-secondary);
+          padding: 16px;
+          border-radius: 4px;
+          margin-bottom: 16px;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          max-height: 400px;
+          overflow-y: auto;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .generated-content p {
+          margin: 0;
+        }
+
+        .info-panel {
+          padding: 24px;
+        }
+
+        .info-panel h3 {
+          margin: 0 0 12px 0;
+          font-size: 14px;
+        }
+
+        .info-panel ol {
+          margin: 0 0 16px 0;
+          padding-left: 20px;
+          font-size: 13px;
+          line-height: 1.6;
+          color: var(--text-secondary);
+        }
+
+        .info-panel li {
+          margin-bottom: 6px;
+        }
+
+        .context-info {
+          background: var(--bg-secondary);
+          padding: 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          margin: 0;
+          line-height: 1.4;
         }
       `}</style>
     </div>
