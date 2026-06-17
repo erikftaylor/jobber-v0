@@ -164,6 +164,10 @@ export const App: React.FC = () => {
     }
   };
 
+  /**
+   * Generate a resume from job description and uploaded documents
+   * Returns a ResumeArtifact with generated content and HTML
+   */
   const generateResume = async (jd: string = jobDescription): Promise<ResumeArtifact | null> => {
     if (!jd.trim()) {
       setError('Please paste a job description');
@@ -247,14 +251,25 @@ export const App: React.FC = () => {
 
       // Validate artifact has necessary content
       if (!htmlToExport) {
-        setExportStatus('Preparing resume for export…');
-        // If we have content but no HTML, re-render it
-        if (currentArtifact?.content) {
-          // In this case, the HTML should have been generated, but if it's missing
-          // we can't recover without re-generating, so we'll treat this as an error
-          throw new Error('Resume HTML could not be generated. Please try generating again.');
+        if (!currentArtifact?.content) {
+          throw new Error('No resume content found. Please generate a resume first.');
         }
-        throw new Error('No resume content found. Please generate a resume first.');
+        // If we have content but no HTML, create a basic HTML wrapper
+        setExportStatus('Preparing resume for export…');
+        htmlToExport = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Resume</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.5; margin: 40px; }
+    h2 { margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+  </style>
+</head>
+<body>
+<pre>${currentArtifact.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+</body>
+</html>`;
       }
 
       setExportStatus('Rendering PDF…');
