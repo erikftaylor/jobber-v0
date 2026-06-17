@@ -1,96 +1,113 @@
 /**
  * PDF Generator Service
- * Converts HTML resume to PDF with ATS-safe formatting
+ * Converts HTML resume to PDF using pdfkit (no browser required)
  */
 
-import puppeteer from 'puppeteer';
+import PDFDocument from 'pdfkit';
 
 export class PDFGenerator {
   /**
-   * Generate PDF without maintaining persistent browser
-   * Creates and closes browser for each request to avoid resource issues
+   * Convert HTML resume to PDF buffer
+   * Uses pdfkit for pure JavaScript PDF generation (no browser needed)
    */
-  async generatePDF(html: string): Promise<Buffer> {
-    let browser: puppeteer.Browser | null = null;
-    let page: puppeteer.Page | null = null;
+  async htmlToPdf(html: string, filename?: string): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('[PDFGenerator] Starting PDF generation with pdfkit');
 
-    try {
-      console.log('[PDFGenerator] Launching browser for this request...');
+        const doc = new PDFDocument({
+          size: 'Letter',
+          margin: {
+            top: 43, // 0.6in in points
+            right: 43,
+            bottom: 43,
+            left: 43,
+          },
+        });
 
-      const launchOptions: puppeteer.PuppeteerLaunchOptions = {
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-gpu',
-          '--disable-dev-shm-usage',
-          '--disable-extensions',
-        ],
-        timeout: 10000,
-      };
+        const chunks: Buffer[] = [];
 
-      // On macOS, try to use system Chrome
-      if (process.platform === 'darwin') {
-        launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+        doc.on('data', (chunk: Buffer) => {
+          chunks.push(chunk);
+        });
+
+        doc.on('end', () => {
+          const pdf = Buffer.concat(chunks);
+          console.log('[PDFGenerator] PDF generated:', pdf.length, 'bytes');
+          resolve(pdf);
+        });
+
+        doc.on('error', (err) => {
+          console.error('[PDFGenerator] PDF error:', err);
+          reject(err);
+        });
+
+        // Extract text from HTML and render to PDF
+        const text = this.htmlToText(html);
+
+        // Set font and render content
+        doc.fontSize(10.5);
+        doc.text(text, {
+          align: 'left',
+          lineGap: 5,
+        });
+
+        doc.end();
+      } catch (err) {
+        console.error('[PDFGenerator] Error:', err);
+        reject(err);
       }
-
-      browser = await puppeteer.launch(launchOptions);
-      console.log('[PDFGenerator] Browser launched');
-
-      page = await browser.newPage();
-      console.log('[PDFGenerator] Page created');
-
-      await page.setContent(html, { waitUntil: 'domcontentloaded' });
-      console.log('[PDFGenerator] Content loaded');
-
-      const pdf = await page.pdf({
-        format: 'letter',
-        margin: {
-          top: '0.6in',
-          right: '0.6in',
-          bottom: '0.6in',
-          left: '0.6in',
-        },
-        printBackground: true,
-      });
-
-      console.log('[PDFGenerator] PDF generated:', pdf.length, 'bytes');
-      return pdf;
-    } finally {
-      if (page) {
-        try {
-          await page.close();
-        } catch (e) {
-          console.warn('[PDFGenerator] Error closing page:', e);
-        }
-      }
-      if (browser) {
-        try {
-          await browser.close();
-        } catch (e) {
-          console.warn('[PDFGenerator] Error closing browser:', e);
-        }
-      }
-    }
-  }
-
-  // Deprecated: keeping for backward compatibility
-  private browser: puppeteer.Browser | null = null;
-
-  async initialize(): Promise<void> {
-    // No-op for backward compatibility
-  }
-
-  async close(): Promise<void> {
-    // No-op for backward compatibility
+    });
   }
 
   /**
-   * Convert HTML resume to PDF buffer
-   * Uses generatePDF internally
+   * Convert HTML to plain text for PDF rendering
    */
-  async htmlToPdf(html: string, filename?: string): Promise<Buffer> {
-    return this.generatePDF(html);
+  private htmlToText(html: string): string {
+    // Remove script and style tags
+    let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+
+    // Convert HTML entities
+    text = text.replace(/&nbsp;/g, ' ');
+    text = text.replace(/&lt;/g, '<');
+    text = text.replace(/&gt;/g, '>');
+    text = text.replace(/&amp;/g, '&');
+    text = text.replace(/&quot;/g, '"');
+
+    // Remove HTML tags but keep content
+    text = text.replace(/<[^>]*>/g, '');
+
+    // Clean up whitespace
+    text = text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n');
+
+    // Decode HTML entities
+    const textarea = { value: text } as any;
+    try {
+      const div = require('os').platform() === 'win32'
+        ? { innerHTML: text, textContent: '' }
+        : { innerHTML: text, textContent: '' };
+      // Use simple regex replacements instead
+      text = text
+        .replace(/&#(\d+);/g, (_: string, code: string) => String.fromCharCode(Number(code)))
+        .replace(/&#x([a-f\d]+);/gi, (_: string, code: string) => String.fromCharCode(Number(`0x${code}`)));
+    } catch (e) {
+      // Ignore HTML parsing errors
+    }
+
+    return text;
+  }
+
+  async initialize(): Promise<void> {
+    // No-op - pdfkit doesn't require initialization
+  }
+
+  async close(): Promise<void> {
+    // No-op - pdfkit doesn't require cleanup
   }
 }
 
