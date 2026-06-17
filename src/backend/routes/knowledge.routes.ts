@@ -425,13 +425,45 @@ Write the tailored resume now, following the exact format above:`;
 
       console.log(`[Generate] Generated resume content`);
 
-      res.json({
-        success: true,
-        material_type: 'resume',
-        generated_content: response.content,
-        based_on_documents: documents.length,
-        notes: 'Generated resume formatted and validated for ATS compatibility. See resumeFormatted for structured output.',
-      });
+      try {
+        // Parse generated text into structured resume
+        console.log('[Generate] Importing parser...');
+        const { resumeParser } = await import('../services/resume-parser.service');
+        console.log('[Generate] Parsing resume text...');
+        const structuredResume = resumeParser.parse(response.content);
+        console.log('[Generate] Parsed successfully');
+
+        // Pass through Resume Output Engine for formatting and validation
+        console.log('[Generate] Importing Resume Output Engine...');
+        const { resumeOutputEngine } = await import('../services/resume-output-engine.service');
+        console.log('[Generate] Generating formatted resume...');
+        const output = resumeOutputEngine.generate(structuredResume);
+        console.log(`[Generate] Resume formatted: ${output.stats.experienceRoles} roles, ${output.stats.summaryWords} summary words, ${output.stats.estimatedPages} pages`);
+
+        res.json({
+          success: true,
+          material_type: 'resume',
+          generated_content: response.content,
+          formatted_html: output.html, // ATS-formatted HTML for PDF
+          based_on_documents: documents.length,
+          stats: output.stats,
+          validation: {
+            valid: output.validation.valid,
+            warnings: output.validation.warnings,
+          },
+        });
+      } catch (formatError) {
+        console.error('[Generate] Formatting error:', formatError);
+        // Fallback: return raw content without formatting
+        res.json({
+          success: true,
+          material_type: 'resume',
+          generated_content: response.content,
+          formatted_html: null,
+          based_on_documents: documents.length,
+          formatting_error: formatError instanceof Error ? formatError.message : 'Failed to format resume',
+        });
+      }
     } catch (error) {
       console.error('Generate error:', error);
       res.status(500).json({

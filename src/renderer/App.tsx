@@ -181,27 +181,7 @@ export const App: React.FC = () => {
       }
 
       setGeneratedContent(data.generated_content);
-
-      // For now, create a simple HTML version of the resume
-      // When Resume Output Engine is integrated, this will use the formatted HTML
-      const simpleHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Resume</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 0.6in; line-height: 1.4; }
-            pre { font-family: Arial, sans-serif; white-space: pre-wrap; word-wrap: break-word; }
-          </style>
-        </head>
-        <body>
-          <pre>${data.generated_content}</pre>
-        </body>
-        </html>
-      `;
-      setGeneratedHtml(simpleHtml);
+      setGeneratedHtml(data.formatted_html); // Use ATS-formatted HTML from Resume Output Engine
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
