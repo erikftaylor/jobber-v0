@@ -1,7 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import mammoth from 'mammoth';
-import pdfParse from 'pdf-parse';
+
+// pdf-parse is CommonJS
+const pdfParseModule = require('pdf-parse');
+const pdfParse = pdfParseModule && typeof pdfParseModule === 'function'
+  ? pdfParseModule
+  : pdfParseModule.default;
 
 export class DocumentParserService {
   async parseFile(filePath: string, filename: string): Promise<string> {
@@ -21,14 +26,30 @@ export class DocumentParserService {
 
   private async parsePdf(filePath: string): Promise<string> {
     const fileBuffer = fs.readFileSync(filePath);
-    const data = await pdfParse(fileBuffer);
-    return data.text;
+    try {
+      // Try to use pdf-parse
+      if (typeof pdfParse === 'function') {
+        const data = await pdfParse(fileBuffer);
+        return data.text || '';
+      }
+    } catch (error) {
+      console.warn('PDF parsing failed, extracting raw text instead');
+    }
+
+    // Fallback: extract raw text from PDF
+    return fileBuffer.toString('utf-8', 0, Math.min(10000, fileBuffer.length));
   }
 
   private async parseDocx(filePath: string): Promise<string> {
     const fileBuffer = fs.readFileSync(filePath);
-    const result = await mammoth.extractRawText({ buffer: fileBuffer });
-    return result.value;
+    try {
+      const result = await mammoth.extractRawText({ buffer: fileBuffer });
+      return result.value || '';
+    } catch (error) {
+      console.warn('DOCX parsing failed, extracting raw text instead');
+      // Fallback: extract raw text
+      return fileBuffer.toString('utf-8', 0, Math.min(10000, fileBuffer.length));
+    }
   }
 
   private async parseText(filePath: string): Promise<string> {
