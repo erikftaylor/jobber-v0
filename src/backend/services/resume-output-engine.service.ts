@@ -6,7 +6,7 @@
 
 import { ResumeNormalizer } from './resume-normalizer.service';
 import { ResumeValidator } from './resume-validator.service';
-import { ResumeRenderer } from './resume-renderer.service';
+import { ATSResumeRenderer } from './resume-renderer-ats.service';
 import type { StructuredResume, NormalizedResume } from '../../shared/resumeTypes';
 
 export interface ResumeOutput {
@@ -29,7 +29,7 @@ export interface ResumeOutput {
 export class ResumeOutputEngine {
   private normalizer = new ResumeNormalizer();
   private validator = new ResumeValidator();
-  private renderer = new ResumeRenderer();
+  private renderer = new ATSResumeRenderer();
 
   /**
    * Generate complete resume output

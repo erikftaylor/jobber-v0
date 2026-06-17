@@ -1,95 +1,112 @@
 /**
- * Resume Format Specification
- * Centralized design tokens for deterministic, ATS-safe resume output
- * Every resume rendered from this spec produces identical visual output
+ * ATS Professional Resume Format Specification
+ * Matches ATS Professional Resume template exactly for 2026 AI-driven ATS
+ * Ensures perfect visual match while preserving single-column reading order
  */
 
 export const RESUME_FORMAT = {
   // Document configuration
   document: {
-    paperSize: 'letter', // US Letter: 8.5" x 11"
+    paperSize: 'letter', // US Letter or A4
     orientation: 'portrait',
     maxPages: 1,
     columns: 1,
     background: '#FFFFFF',
     outputFormat: 'pdf',
-    textSearchable: true, // Never rasterize text
+    textSearchable: true,
   },
 
   // Measurements in inches (standard for PDF)
   margins: {
-    top: 0.6,
-    right: 0.6,
-    bottom: 0.6,
-    left: 0.6,
+    top: 0.79, // 20mm
+    right: 0.59, // 15mm
+    bottom: 0.79, // 20mm
+    left: 0.59, // 15mm
   },
 
-  // Typography
+  // Typography - ATS safe sans-serif stack
   fonts: {
-    primary: 'Inter',
-    fallbackStack: ['Inter', 'Aptos', 'Calibri', 'Helvetica Neue', 'Helvetica', 'Arial', 'sans-serif'],
+    primary: 'Arial',
+    fallbackStack: ['Arial', 'Helvetica', 'sans-serif'],
     embedFonts: true,
     neverRasterize: true,
   },
 
-  // Color palette
+  // Color palette - professional, high-contrast, ATS-friendly
   colors: {
-    text: '#111111', // Primary text
-    secondary: '#444444', // Secondary text (dates, company)
-    divider: '#DDDDDD', // Section dividers
-    background: '#FFFFFF', // Page background
+    // Primary headers and name
+    navy: '#1a365d',
+    // Main body text and titles
+    darkCharcoal: '#2d3748',
+    // Secondary metadata
+    slateGray: '#4a5568',
+    // Dates and passive elements
+    mediumGray: '#718096',
+    // Dividers
+    lightBorder: '#cbd5e0',
+    // Background
+    background: '#FFFFFF',
   },
 
-  // Font sizes in points
+  // Font sizes in points (exact ATS specification)
   fontSizes: {
-    name: 20,
-    contact: 9.5,
-    sectionHeading: 11,
-    jobTitle: 11,
-    company: 10.5,
-    dates: 10,
+    name: 22,
+    contact: 10,
+    sectionHeading: 12,
+    metaLeft: 10.5, // Company / Role / Degree
+    metaRight: 10, // Dates
+    subHeading: 10.5, // Job sub-details
     body: 10.5,
     bullets: 10.5,
   },
 
   // Font weights
   fontWeights: {
-    name: 700,
-    sectionHeading: 700,
-    jobTitle: 600,
-    company: 500,
-    body: 400,
-    dates: 400,
+    name: 700, // Bold
+    sectionHeading: 700, // Bold
+    metaLeft: 700, // Bold
+    subHeading: 700, // Bold & Italic
+    body: 400, // Regular
+    dates: 400, // Regular
+    contact: 400, // Regular
   },
 
-  // Line heights (unitless multipliers)
+  // Line heights
   lineHeights: {
-    name: 1.0,
-    contact: 1.15,
-    sectionHeading: 1.15,
-    body: 1.3,
-    bullets: 1.25,
+    name: 1.2,
+    contact: 1.4,
+    sectionHeading: 1.2,
+    body: 1.5, // ATS spec: 1.5
+    bullets: 1.5,
   },
 
-  // Spacing in points
+  // Spacing in pixels (ATS specification)
   spacing: {
-    contactAfter: 16,
-    sectionHeadingBefore: 16,
-    sectionHeadingAfter: 8,
-    paragraphAfter: 4,
-    bulletAfter: 3,
-    roleBlockAfter: 12,
-    dividerMarginTop: 6,
-    dividerMarginBottom: 10,
+    headerMarginBottom: 20, // Below contact details
+    sectionMarginTop: 22, // Before section header
+    sectionMarginBottom: 10, // After section header
+    sectionBorderPadding: 3, // Under border-bottom
+    skillRowPadding: 4,
+    skillBlockMargin: 15,
+    jobBlockMargin: 16,
+    jobMetaMargin: 4,
+    bulletMargin: 4,
+    eduBlockMargin: 12,
+    bulletIndent: 20, // pixels
   },
 
-  // Bullet configuration
+  // Dividers
+  dividers: {
+    style: 'solid',
+    width: 1,
+    color: '#cbd5e0', // Light gray
+    paddingBottom: 3,
+  },
+
+  // Bullets
   bullets: {
-    character: '•',
-    indentInches: 0.18,
-    hangingIndentInches: 0.18,
-    maxVisualLines: 2,
-    allowNested: false,
+    character: '•', // Standard round bullet
+    indent: 20, // pixels (padding-left)
   },
 
   // Section order (immutable)
@@ -103,29 +120,37 @@ export const RESUME_FORMAT = {
     'portfolio',
   ] as const,
 
-  // ATS-safe restrictions (prohibited elements)
+  // ATS-safe restrictions
   atsSafe: {
     prohibit: [
-      'tables',
-      'columns',
+      'flexbox',
+      'css-grid',
+      'tables-for-layout',
       'icons',
       'photos',
       'logos',
       'graphics',
       'charts',
-      'textBoxes',
-      'skillBars',
-      'progressBars',
+      'text-boxes',
+      'skill-bars',
+      'progress-bars',
       'sidebars',
-      'justifiedText',
-      'rasterizedText',
-      'footers',
-      'headers',
+      'styled-bullets',
+      'rasterized-text',
+      'footers-with-content',
+      'headers-with-content',
     ],
-    alignment: 'left',
+    mustUse: [
+      'block-elements',
+      'standard-bullets',
+      'table-for-side-by-side', // For dates/titles
+      'pure-css-borders',
+      'left-aligned-content',
+      'centered-header-only',
+    ],
   },
 
-  // Content constraints (enforced during normalization)
+  // Content constraints
   contentConstraints: {
     summary: {
       maxWords: 70,
@@ -139,13 +164,9 @@ export const RESUME_FORMAT = {
       previous: { min: 4, max: 6 },
       older: { min: 2, max: 4 },
     },
-    roleCount: {
-      // Number of roles to display
-      maxRoles: 5,
-    },
   },
 
-  // One-page fitting compression order
+  // Compression order for one-page fitting
   compressionOrder: [
     'reduceOlderRoleBullets',
     'reduceSkills',
@@ -153,98 +174,113 @@ export const RESUME_FORMAT = {
     'reduceCurrentRoleBullets',
   ] as const,
 
-  // Compression constraints
-  compressionConstraints: {
-    minBodyFontSize: 10,
-    minMargins: 0.5,
+  // Page break prevention
+  pageBreaks: {
+    avoidInside: ['job-block', 'edu-block'],
+    avoidAfter: ['section-title'],
   },
 } as const;
 
 /**
- * Paragraph styles - named styles used throughout the resume
- * Maps to RESUME_FORMAT tokens for consistency
+ * Paragraph styles - named styles using ATS format tokens
  */
 export const PARAGRAPH_STYLES = {
   ResumeName: {
     fontSize: RESUME_FORMAT.fontSizes.name,
     fontWeight: RESUME_FORMAT.fontWeights.name,
     lineHeight: RESUME_FORMAT.lineHeights.name,
-    color: RESUME_FORMAT.colors.text,
-    marginBottom: RESUME_FORMAT.spacing.contactAfter,
+    color: RESUME_FORMAT.colors.navy,
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: RESUME_FORMAT.spacing.headerMarginBottom,
   },
 
   ResumeContact: {
     fontSize: RESUME_FORMAT.fontSizes.contact,
-    fontWeight: RESUME_FORMAT.fontWeights.body,
+    fontWeight: RESUME_FORMAT.fontWeights.contact,
     lineHeight: RESUME_FORMAT.lineHeights.contact,
-    color: RESUME_FORMAT.colors.secondary,
-    marginBottom: RESUME_FORMAT.spacing.contactAfter,
+    color: RESUME_FORMAT.colors.slateGray,
+    textAlign: 'center',
+    marginBottom: RESUME_FORMAT.spacing.headerMarginBottom,
   },
 
   ResumeSectionHeading: {
     fontSize: RESUME_FORMAT.fontSizes.sectionHeading,
     fontWeight: RESUME_FORMAT.fontWeights.sectionHeading,
     lineHeight: RESUME_FORMAT.lineHeights.sectionHeading,
-    color: RESUME_FORMAT.colors.text,
-    marginTop: RESUME_FORMAT.spacing.sectionHeadingBefore,
-    marginBottom: RESUME_FORMAT.spacing.sectionHeadingAfter,
-    borderBottom: `1px solid ${RESUME_FORMAT.colors.divider}`,
-    paddingBottom: 4,
+    color: RESUME_FORMAT.colors.navy,
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase',
+    marginTop: RESUME_FORMAT.spacing.sectionMarginTop,
+    marginBottom: RESUME_FORMAT.spacing.sectionMarginBottom,
+    borderBottom: `${RESUME_FORMAT.dividers.width}px ${RESUME_FORMAT.dividers.style} ${RESUME_FORMAT.dividers.color}`,
+    paddingBottom: RESUME_FORMAT.dividers.paddingBottom,
+    pageBreakAfter: 'avoid',
   },
 
   ResumeSummary: {
     fontSize: RESUME_FORMAT.fontSizes.body,
     fontWeight: RESUME_FORMAT.fontWeights.body,
     lineHeight: RESUME_FORMAT.lineHeights.body,
-    color: RESUME_FORMAT.colors.text,
-    marginBottom: RESUME_FORMAT.spacing.paragraphAfter,
-  },
-
-  ResumeSkillLine: {
-    fontSize: RESUME_FORMAT.fontSizes.body,
-    fontWeight: RESUME_FORMAT.fontWeights.body,
-    lineHeight: RESUME_FORMAT.lineHeights.body,
-    color: RESUME_FORMAT.colors.text,
-    marginBottom: RESUME_FORMAT.spacing.paragraphAfter,
-  },
-
-  ResumeCompany: {
-    fontSize: RESUME_FORMAT.fontSizes.company,
-    fontWeight: RESUME_FORMAT.fontWeights.company,
-    lineHeight: RESUME_FORMAT.lineHeights.body,
-    color: RESUME_FORMAT.colors.secondary,
+    color: RESUME_FORMAT.colors.darkCharcoal,
+    marginBottom: RESUME_FORMAT.spacing.sectionMarginBottom,
+    textAlign: 'justify',
   },
 
   ResumeJobTitle: {
-    fontSize: RESUME_FORMAT.fontSizes.jobTitle,
-    fontWeight: RESUME_FORMAT.fontWeights.jobTitle,
+    fontSize: RESUME_FORMAT.fontSizes.metaLeft,
+    fontWeight: RESUME_FORMAT.fontWeights.metaLeft,
     lineHeight: RESUME_FORMAT.lineHeights.body,
-    color: RESUME_FORMAT.colors.text,
+    color: RESUME_FORMAT.colors.darkCharcoal,
+  },
+
+  ResumeCompany: {
+    fontSize: RESUME_FORMAT.fontSizes.metaLeft,
+    fontWeight: RESUME_FORMAT.fontWeights.metaLeft,
+    lineHeight: RESUME_FORMAT.lineHeights.body,
+    color: RESUME_FORMAT.colors.darkCharcoal,
   },
 
   ResumeDates: {
-    fontSize: RESUME_FORMAT.fontSizes.dates,
+    fontSize: RESUME_FORMAT.fontSizes.metaRight,
     fontWeight: RESUME_FORMAT.fontWeights.dates,
     lineHeight: RESUME_FORMAT.lineHeights.body,
-    color: RESUME_FORMAT.colors.secondary,
+    color: RESUME_FORMAT.colors.mediumGray,
+  },
+
+  ResumeSubHeading: {
+    fontSize: RESUME_FORMAT.fontSizes.subHeading,
+    fontWeight: RESUME_FORMAT.fontWeights.subHeading,
+    fontStyle: 'italic',
+    lineHeight: RESUME_FORMAT.lineHeights.body,
+    color: RESUME_FORMAT.colors.slateGray,
   },
 
   ResumeBullet: {
     fontSize: RESUME_FORMAT.fontSizes.bullets,
     fontWeight: RESUME_FORMAT.fontWeights.body,
     lineHeight: RESUME_FORMAT.lineHeights.bullets,
-    color: RESUME_FORMAT.colors.text,
-    marginLeft: `${RESUME_FORMAT.bullets.indentInches}in`,
-    marginBottom: RESUME_FORMAT.spacing.bulletAfter,
-    textIndent: `-${RESUME_FORMAT.bullets.hangingIndentInches}in`,
+    color: RESUME_FORMAT.colors.darkCharcoal,
+    marginBottom: RESUME_FORMAT.spacing.bulletMargin,
+    marginLeft: `${RESUME_FORMAT.spacing.bulletIndent}px`,
+    textAlign: 'justify',
   },
 
   ResumeEducation: {
     fontSize: RESUME_FORMAT.fontSizes.body,
     fontWeight: RESUME_FORMAT.fontWeights.body,
     lineHeight: RESUME_FORMAT.lineHeights.body,
-    color: RESUME_FORMAT.colors.text,
-    marginBottom: RESUME_FORMAT.spacing.paragraphAfter,
+    color: RESUME_FORMAT.colors.darkCharcoal,
+    marginBottom: RESUME_FORMAT.spacing.eduBlockMargin,
+  },
+
+  ResumeSkillLine: {
+    fontSize: RESUME_FORMAT.fontSizes.body,
+    fontWeight: RESUME_FORMAT.fontWeights.body,
+    lineHeight: RESUME_FORMAT.lineHeights.body,
+    color: RESUME_FORMAT.colors.darkCharcoal,
+    paddingBottom: RESUME_FORMAT.spacing.skillRowPadding,
   },
 } as const;
 
