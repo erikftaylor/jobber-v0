@@ -33,6 +33,93 @@ interface KnowledgeRouterDeps {
 export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
   const { db, parser } = deps;
 
+  // Session Management Routes
+  router.get('/sessions', (req: Request, res: Response) => {
+    try {
+      const sessions = db.listSessions();
+      const active = db.getActiveSession();
+      res.json({
+        success: true,
+        sessions,
+        activeSession: active,
+      });
+    } catch (error) {
+      console.error('List sessions error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to list sessions',
+      });
+    }
+  });
+
+  router.post('/sessions', (req: Request, res: Response) => {
+    try {
+      const { name } = req.body;
+      if (!name) {
+        res.status(400).json({ error: 'Session name required' });
+        return;
+      }
+      const session = db.createSession(name);
+      db.setActiveSession(session.id);
+      res.json({
+        success: true,
+        session,
+      });
+    } catch (error) {
+      console.error('Create session error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to create session',
+      });
+    }
+  });
+
+  router.post('/sessions/:id/switch', (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      db.setActiveSession(id);
+      res.json({
+        success: true,
+        activeSession: id,
+      });
+    } catch (error) {
+      console.error('Switch session error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to switch session',
+      });
+    }
+  });
+
+  router.delete('/sessions/:id', (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (id === 'default') {
+        res.status(400).json({ error: 'Cannot delete default session' });
+        return;
+      }
+      db.deleteSession(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Delete session error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to delete session',
+      });
+    }
+  });
+
+  router.post('/clear', (req: Request, res: Response) => {
+    try {
+      db.clearSession();
+      res.json({
+        success: true,
+        message: 'Session cleared',
+      });
+    } catch (error) {
+      console.error('Clear session error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to clear session',
+      });
+    }
+  });
+
   // POST /api/kb/upload - Upload a document
   router.post(
     '/upload',

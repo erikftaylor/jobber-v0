@@ -3,16 +3,39 @@ import { UploadZone } from './components/UploadZone';
 import { KnowledgeBaseBrowser } from './components/KnowledgeBaseBrowser';
 import type { KnowledgeBase, Document } from '../shared/types';
 
+interface Session {
+  id: string;
+  name: string;
+  created_at: Date;
+}
+
 export const App: React.FC = () => {
   const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBase | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingKB, setIsLoadingKB] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSession, setActiveSession] = useState<string>('default');
+  const [showNewSession, setShowNewSession] = useState(false);
+  const [newSessionName, setNewSessionName] = useState('');
 
-  // Load knowledge base on mount
+  // Load knowledge base and sessions on mount
   useEffect(() => {
+    loadSessions();
     loadKnowledgeBase();
   }, []);
+
+  const loadSessions = async () => {
+    try {
+      const response = await fetch('/api/kb/sessions');
+      if (!response.ok) throw new Error('Failed to load sessions');
+      const data = await response.json();
+      setSessions(data.sessions);
+      setActiveSession(data.activeSession);
+    } catch (err) {
+      console.error('Failed to load sessions:', err);
+    }
+  };
 
   const loadKnowledgeBase = async () => {
     try {
@@ -25,6 +48,65 @@ export const App: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsLoadingKB(false);
+    }
+  };
+
+  const handleCreateSession = async () => {
+    if (!newSessionName.trim()) return;
+    try {
+      const response = await fetch('/api/kb/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newSessionName }),
+      });
+      if (!response.ok) throw new Error('Failed to create session');
+      setNewSessionName('');
+      setShowNewSession(false);
+      await loadSessions();
+      await loadKnowledgeBase();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create session');
+    }
+  };
+
+  const handleSwitchSession = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/kb/sessions/${sessionId}/switch`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('Failed to switch session');
+      setActiveSession(sessionId);
+      await loadKnowledgeBase();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to switch session');
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!confirm(`Delete session "${sessions.find(s => s.id === sessionId)?.name}"?`)) return;
+    try {
+      const response = await fetch(`/api/kb/sessions/${sessionId}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete session');
+      await loadSessions();
+      await loadKnowledgeBase();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete session');
+    }
+  };
+
+  const handleClearSession = async () => {
+    if (!confirm('Clear all documents in this session? This cannot be undone.')) return;
+    try {
+      const response = await fetch('/api/kb/clear', {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('Failed to clear session');
+      await loadKnowledgeBase();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear session');
     }
   };
 
@@ -69,8 +151,46 @@ export const App: React.FC = () => {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Jobber v0</h1>
-        <p className="subtitle">AI-Powered Job Application Assistant</p>
+        <div className="header-top">
+          <div>
+            <h1>Jobber v0</h1>
+            <p className="subtitle">AI-Powered Job Application Assistant</p>
+          </div>
+          <div className="session-controls">
+            <select value={activeSession} onChange={(e) => handleSwitchSession(e.target.value)} className="session-selector">
+              {sessions.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <button onClick={() => setShowNewSession(!showNewSession)} className="btn-secondary">
+              + New
+            </button>
+            <button onClick={handleClearSession} className="btn-danger" title="Clear all documents">
+              Clear
+            </button>
+            {activeSession !== 'default' && (
+              <button onClick={() => handleDeleteSession(activeSession)} className="btn-danger" title="Delete this session">
+                Delete
+              </button>
+            )}
+          </div>
+        </div>
+        {showNewSession && (
+          <div className="new-session-form">
+            <input
+              type="text"
+              placeholder="Session name (e.g., Google PM, Acme Frontend)"
+              value={newSessionName}
+              onChange={(e) => setNewSessionName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreateSession()}
+              autoFocus
+            />
+            <button onClick={handleCreateSession} className="btn-primary">Create</button>
+            <button onClick={() => setShowNewSession(false)} className="btn-secondary">Cancel</button>
+          </div>
+        )}
       </header>
 
       {error && <div className="error-banner">{error}</div>}
@@ -113,6 +233,8 @@ export const App: React.FC = () => {
           --input-bg: #ffffff;
           --error-bg: #fff3cd;
           --error-text: #856404;
+          --danger-bg: #f8d7da;
+          --danger-text: #721c24;
         }
 
         @media (prefers-color-scheme: dark) {
@@ -129,6 +251,8 @@ export const App: React.FC = () => {
             --input-bg: #2a2a2a;
             --error-bg: #664400;
             --error-text: #ffaa66;
+            --danger-bg: #5a2a2a;
+            --danger-text: #ff9999;
           }
         }
 
@@ -156,6 +280,13 @@ export const App: React.FC = () => {
           background: var(--bg-secondary);
         }
 
+        .header-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+
         .app-header h1 {
           margin: 0;
           font-size: 24px;
@@ -165,6 +296,80 @@ export const App: React.FC = () => {
           margin: 4px 0 0 0;
           font-size: 13px;
           color: var(--text-secondary);
+        }
+
+        .session-controls {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .session-selector {
+          padding: 6px 12px;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background: var(--input-bg);
+          color: var(--text-primary);
+          font-size: 13px;
+          cursor: pointer;
+        }
+
+        .btn-primary, .btn-secondary, .btn-danger {
+          padding: 6px 12px;
+          border: none;
+          border-radius: 4px;
+          font-size: 13px;
+          cursor: pointer;
+          font-weight: 500;
+          transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+          background: var(--accent);
+          color: white;
+        }
+
+        .btn-primary:hover {
+          opacity: 0.9;
+        }
+
+        .btn-secondary {
+          background: var(--tag-bg);
+          color: var(--text-primary);
+          border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+          background: var(--border-color);
+        }
+
+        .btn-danger {
+          background: var(--danger-bg);
+          color: var(--danger-text);
+          border: 1px solid var(--danger-text);
+          font-size: 12px;
+        }
+
+        .btn-danger:hover {
+          opacity: 0.9;
+        }
+
+        .new-session-form {
+          display: flex;
+          gap: 8px;
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .new-session-form input {
+          flex: 1;
+          padding: 8px 12px;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background: var(--input-bg);
+          color: var(--text-primary);
+          font-size: 13px;
         }
 
         .error-banner {

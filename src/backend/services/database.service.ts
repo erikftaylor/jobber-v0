@@ -15,6 +15,7 @@ import type {
 export class DatabaseService {
   private db: Database.Database;
   private dbPath: string;
+  private activeSessionId: string = 'default';
 
   constructor(dbPath?: string) {
     this.dbPath = dbPath || path.join(process.cwd(), 'data', 'jobber.db');
@@ -37,26 +38,35 @@ export class DatabaseService {
 
     this.db.exec(schema);
 
-    // Initialize knowledge base if it doesn't exist
-    const kb = this.db.prepare('SELECT id FROM knowledge_base LIMIT 1').get();
+    // Initialize default session if it doesn't exist
+    const defaultSession = this.db.prepare('SELECT id FROM sessions WHERE id = ?').get('default');
+    if (!defaultSession) {
+      const now = new Date().toISOString();
+      this.db.prepare('INSERT INTO sessions (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
+        .run('default', 'Default Session', now, now);
+    }
+
+    // Initialize knowledge base for default session if it doesn't exist
+    const kb = this.db.prepare('SELECT id FROM knowledge_base WHERE session_id = ?').get('default');
     if (!kb) {
-      this.createInitialKnowledgeBase();
+      this.createInitialKnowledgeBase('default');
     }
   }
 
-  private createInitialKnowledgeBase(): void {
+  private createInitialKnowledgeBase(sessionId: string): void {
     const id = 'kb-' + uuid().replace(/-/g, '').substring(0, 16);
     const now = new Date().toISOString();
 
     const stmt = this.db.prepare(`
       INSERT INTO knowledge_base (
-        id, skills, achievements, technologies, writing_style, "values",
+        id, session_id, skills, achievements, technologies, writing_style, "values",
         synthesis_version, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
       id,
+      sessionId,
       JSON.stringify([]),
       JSON.stringify([]),
       JSON.stringify([]),
@@ -74,6 +84,47 @@ export class DatabaseService {
     );
   }
 
+  // Session Management
+  createSession(name: string): { id: string; name: string } {
+    const id = 'sess-' + uuid().replace(/-/g, '').substring(0, 12);
+    const now = new Date().toISOString();
+
+    this.db.prepare('INSERT INTO sessions (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .run(id, name, now, now);
+
+    this.createInitialKnowledgeBase(id);
+    return { id, name };
+  }
+
+  listSessions(): Array<{ id: string; name: string; created_at: Date }> {
+    const rows = this.db.prepare('SELECT id, name, created_at FROM sessions ORDER BY created_at DESC').all() as any[];
+    return rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      created_at: new Date(row.created_at),
+    }));
+  }
+
+  setActiveSession(sessionId: string): void {
+    const session = this.db.prepare('SELECT id FROM sessions WHERE id = ?').get(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    this.activeSessionId = sessionId;
+  }
+
+  getActiveSession(): string {
+    return this.activeSessionId;
+  }
+
+  deleteSession(sessionId: string): void {
+    if (sessionId === 'default') throw new Error('Cannot delete default session');
+    this.db.prepare('DELETE FROM documents WHERE session_id = ?').run(sessionId);
+    this.db.prepare('DELETE FROM knowledge_base WHERE session_id = ?').run(sessionId);
+    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+    if (this.activeSessionId === sessionId) {
+      this.activeSessionId = 'default';
+    }
+  }
+
   // Documents
   saveDocument(
     type: Document['type'],
@@ -84,11 +135,11 @@ export class DatabaseService {
     const now = new Date();
 
     const stmt = this.db.prepare(`
-      INSERT INTO documents (id, type, filename, raw_text, uploaded_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO documents (id, session_id, type, filename, raw_text, uploaded_at)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(id, type, filename, rawText, now.toISOString());
+    stmt.run(id, this.activeSessionId, type, filename, rawText, now.toISOString());
 
     return {
       id,
@@ -100,8 +151,8 @@ export class DatabaseService {
   }
 
   getDocument(id: string): Document | null {
-    const stmt = this.db.prepare('SELECT * FROM documents WHERE id = ?');
-    const row = stmt.get(id) as any;
+    const stmt = this.db.prepare('SELECT * FROM documents WHERE id = ? AND session_id = ?');
+    const row = stmt.get(id, this.activeSessionId) as any;
 
     if (!row) return null;
 
@@ -116,8 +167,8 @@ export class DatabaseService {
   }
 
   getAllDocuments(): Document[] {
-    const stmt = this.db.prepare('SELECT * FROM documents ORDER BY uploaded_at DESC');
-    const rows = stmt.all() as any[];
+    const stmt = this.db.prepare('SELECT * FROM documents WHERE session_id = ? ORDER BY uploaded_at DESC');
+    const rows = stmt.all(this.activeSessionId) as any[];
 
     return rows.map(row => ({
       id: row.id,
@@ -130,14 +181,18 @@ export class DatabaseService {
   }
 
   deleteDocument(id: string): void {
-    const stmt = this.db.prepare('DELETE FROM documents WHERE id = ?');
-    stmt.run(id);
+    const stmt = this.db.prepare('DELETE FROM documents WHERE id = ? AND session_id = ?');
+    stmt.run(id, this.activeSessionId);
+  }
+
+  clearSession(): void {
+    this.db.prepare('DELETE FROM documents WHERE session_id = ?').run(this.activeSessionId);
   }
 
   // Knowledge Base
   getKnowledgeBase(): KnowledgeBase | null {
-    const stmt = this.db.prepare('SELECT * FROM knowledge_base LIMIT 1');
-    const row = stmt.get() as any;
+    const stmt = this.db.prepare('SELECT * FROM knowledge_base WHERE session_id = ? LIMIT 1');
+    const row = stmt.get(this.activeSessionId) as any;
 
     if (!row) return null;
 
@@ -174,7 +229,7 @@ export class DatabaseService {
       SET skills = ?, achievements = ?, technologies = ?, writing_style = ?,
           "values" = ?, extracted_at = ?, synthesized_at = ?,
           synthesis_version = synthesis_version + 1, updated_at = ?
-      WHERE id = ?
+      WHERE id = ? AND session_id = ?
     `);
 
     stmt.run(
@@ -186,7 +241,8 @@ export class DatabaseService {
       extractedAt ? extractedAt.toISOString() : null,
       synthesizedAt ? synthesizedAt.toISOString() : null,
       now.toISOString(),
-      kb.id
+      kb.id,
+      this.activeSessionId
     );
 
     return this.getKnowledgeBase()!;
