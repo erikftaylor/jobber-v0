@@ -153,6 +153,26 @@ export class ATSResumeRenderer {
 
       /* PAGE BREAK RULES */
       @media print {
+        * {
+          background: transparent !important;
+          color: #000 !important;
+          box-shadow: none !important;
+          text-shadow: none !important;
+        }
+
+        body, html {
+          background: white;
+          color: #000;
+        }
+
+        .resume {
+          width: 100%;
+          height: auto;
+          margin: 0;
+          padding: 0.6in;
+          background: white;
+        }
+
         .job-block {
           page-break-inside: avoid;
         }
@@ -164,11 +184,22 @@ export class ATSResumeRenderer {
         .section-title {
           page-break-after: avoid;
         }
+
+        a {
+          text-decoration: underline;
+        }
+
+        /* Remove any borders that don't print well */
+        hr {
+          border: none;
+          border-top: 1px solid #000;
+        }
       }
 
       /* PRINT MARGINS */
       @page {
         margin: ${fmt.margins.top}in ${fmt.margins.right}in ${fmt.margins.bottom}in ${fmt.margins.left}in;
+        size: letter;
       }
     `;
   }

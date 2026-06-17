@@ -272,60 +272,30 @@ export const App: React.FC = () => {
 </html>`;
       }
 
-      setExportStatus('Rendering PDF…');
-      let pdfGenerated = false;
+      // Open HTML in new tab for user to print/save as PDF
+      setExportStatus('Opening resume in new tab…');
+      const htmlBlob = new Blob([htmlToExport], { type: 'text/html;charset=utf-8' });
+      const url = window.URL.createObjectURL(htmlBlob);
+      const newTab = window.open(url, '_blank', 'noopener,noreferrer');
 
-      try {
-        const response = await fetch('/api/kb/pdf', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            html: htmlToExport,
-            filename: 'resume.pdf',
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error('PDF generation failed - falling back to HTML export');
-        }
-
-        setExportStatus('Downloading…');
-        // Download the PDF
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'resume.pdf';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-        pdfGenerated = true;
-      } catch (pdfErr) {
-        console.warn('[Export] PDF generation failed:', pdfErr);
-        // Fallback: export as HTML that user can print to PDF
-        setExportStatus('Exporting as HTML (print to PDF in browser)…');
-
-        const htmlBlob = new Blob([htmlToExport], { type: 'text/html' });
-        const url = window.URL.createObjectURL(htmlBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'resume.html';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-
-        setError('PDF generation unavailable. HTML file exported instead - open in browser and use Print > Save as PDF.');
+      if (!newTab) {
+        throw new Error('Could not open new tab. Please check popup blocker settings.');
       }
+
+      // Allow the blob to persist for the new tab
+      setTimeout(() => {
+        // Clean up after the tab has loaded (1 second should be enough)
+        // Actually, keep the URL alive for the tab's lifetime
+      }, 1000);
 
       // Mark artifact as exported
       if (currentArtifact) {
         setCurrentArtifact({ ...currentArtifact, status: 'exported' });
       }
       setExportStatus(null);
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to download PDF');
+      setError(err instanceof Error ? err.message : 'Failed to export resume');
       setExportStatus(null);
     } finally {
       setIsExporting(false);
@@ -485,9 +455,9 @@ export const App: React.FC = () => {
                   onClick={handleDownloadPDF}
                   disabled={isExporting || documents.length === 0 || !jobDescription.trim()}
                   className="btn-primary"
-                  title={documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Download resume as PDF'}
+                  title={documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Open resume in new tab to print/save as PDF'}
                 >
-                  {exportStatus || (isExporting ? 'Exporting...' : 'Download PDF')}
+                  {exportStatus || (isExporting ? 'Exporting...' : 'Export as PDF')}
                 </button>
               </div>
             </div>
