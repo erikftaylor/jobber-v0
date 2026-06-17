@@ -33,24 +33,34 @@ export const App: React.FC = () => {
       setIsUploading(true);
       setError(null);
 
+      console.log('Uploading:', { filename: file.name, type, size: file.size });
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('type', type);
 
+      console.log('Sending fetch to /api/kb/upload');
       const response = await fetch('/api/kb/upload', {
         method: 'POST',
         body: formData,
       });
 
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
+
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Upload failed');
+        throw new Error(data.error || 'Upload failed');
       }
 
+      console.log('Upload successful, reloading KB');
       // Reload knowledge base after successful upload
       await loadKnowledgeBase();
+      console.log('KB reloaded');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      console.error('Upload error:', msg);
+      setError(msg);
     } finally {
       setIsUploading(false);
     }
