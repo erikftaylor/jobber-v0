@@ -143,6 +143,43 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
         // Save to database
         const doc = db.saveDocument(documentType, req.file.originalname, rawText);
 
+        // Auto-trigger extraction if extractor and synthesizer are available
+        let extraction = null;
+        if (deps.extractor && deps.synthesizer) {
+          try {
+            console.log(`[Upload] Auto-extracting knowledge from ${doc.id}`);
+            extraction = await deps.extractor.extractFromDocument(doc.id, rawText, req.file.originalname);
+
+            // Get all documents for synthesis
+            const allDocs = db.getAllDocuments();
+            console.log(`[Upload] Synthesizing knowledge from ${allDocs.length} documents`);
+
+            // Extract from all documents
+            const extractions = await Promise.all(
+              allDocs.map(d => deps.extractor.extractFromDocument(d.id, d.raw_text, d.filename))
+            );
+
+            // Synthesize
+            const synthesized = deps.synthesizer.synthesize(extractions);
+
+            // Update KB
+            const updated = db.updateKnowledgeBase(
+              synthesized.skills,
+              synthesized.achievements,
+              synthesized.technologies,
+              synthesized.writingStyle,
+              synthesized.values,
+              new Date(),
+              new Date()
+            );
+
+            console.log(`[Upload] KB updated: ${synthesized.skills.length} skills, ${synthesized.achievements.length} achievements`);
+            extraction = updated;
+          } catch (extractError) {
+            console.error('[Upload] Extraction failed, continuing:', extractError);
+          }
+        }
+
         res.json({
           success: true,
           document: {
@@ -151,6 +188,11 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
             filename: doc.filename,
             uploaded_at: doc.uploaded_at,
           },
+          extracted: extraction ? {
+            skills: extraction.skills.length,
+            achievements: extraction.achievements.length,
+            technologies: extraction.technologies.length,
+          } : null,
         });
       } catch (error) {
         console.error('Upload error:', error);
