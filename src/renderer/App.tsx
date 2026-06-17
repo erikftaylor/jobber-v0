@@ -16,6 +16,16 @@ interface DocumentItem {
   uploaded_at: Date;
 }
 
+interface ResumeArtifact {
+  id: string;
+  version: number;
+  status: 'draft' | 'generated' | 'exported';
+  content: string;
+  html: string | null;
+  generatedAt: Date;
+  jobDescription: string;
+}
+
 export const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -26,10 +36,13 @@ export const App: React.FC = () => {
   const [showNewSession, setShowNewSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
   const [jobDescription, setJobDescription] = useState('');
+  const [currentArtifact, setCurrentArtifact] = useState<ResumeArtifact | null>(null);
+  // Legacy state - kept for backward compatibility during transition
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
   const [generatedHtml, setGeneratedHtml] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -151,25 +164,22 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleGenerate = async () => {
-    if (!jobDescription.trim()) {
+  const generateResume = async (jd: string = jobDescription): Promise<ResumeArtifact | null> => {
+    if (!jd.trim()) {
       setError('Please paste a job description');
-      return;
+      return null;
     }
     if (documents.length === 0) {
       setError('Upload documents first');
-      return;
+      return null;
     }
 
     try {
-      setIsGenerating(true);
-      setError(null);
-
       const response = await fetch('/api/kb/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          job_description: jobDescription,
+          job_description: jd,
           material_type: 'resume',
         }),
       });
@@ -180,8 +190,36 @@ export const App: React.FC = () => {
         throw new Error(data.error || 'Generation failed');
       }
 
-      setGeneratedContent(data.generated_content);
-      setGeneratedHtml(data.formatted_html); // Use ATS-formatted HTML from Resume Output Engine
+      // Create artifact
+      const artifact: ResumeArtifact = {
+        id: `artifact-${Date.now()}`,
+        version: 1,
+        status: 'generated',
+        content: data.generated_content,
+        html: data.formatted_html,
+        generatedAt: new Date(),
+        jobDescription: jd,
+      };
+
+      return artifact;
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  const handleGenerate = async () => {
+    try {
+      setIsGenerating(true);
+      setError(null);
+
+      const artifact = await generateResume();
+      if (!artifact) return;
+
+      // Update artifact state
+      setCurrentArtifact(artifact);
+      // Keep legacy state in sync
+      setGeneratedContent(artifact.content);
+      setGeneratedHtml(artifact.html);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
@@ -190,20 +228,41 @@ export const App: React.FC = () => {
   };
 
   const handleDownloadPDF = async () => {
-    if (!generatedHtml) {
-      setError('No resume to export');
-      return;
-    }
+    let htmlToExport = currentArtifact?.html || generatedHtml;
 
     try {
       setIsExporting(true);
       setError(null);
 
+      // If no artifact exists, generate one
+      if (!currentArtifact) {
+        setExportStatus('Generating tailored resume…');
+        const artifact = await generateResume();
+        if (!artifact) return;
+        setCurrentArtifact(artifact);
+        setGeneratedContent(artifact.content);
+        setGeneratedHtml(artifact.html);
+        htmlToExport = artifact.html;
+      }
+
+      // Validate artifact has necessary content
+      if (!htmlToExport) {
+        setExportStatus('Preparing resume for export…');
+        // If we have content but no HTML, re-render it
+        if (currentArtifact?.content) {
+          // In this case, the HTML should have been generated, but if it's missing
+          // we can't recover without re-generating, so we'll treat this as an error
+          throw new Error('Resume HTML could not be generated. Please try generating again.');
+        }
+        throw new Error('No resume content found. Please generate a resume first.');
+      }
+
+      setExportStatus('Rendering PDF…');
       const response = await fetch('/api/kb/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          html: generatedHtml,
+          html: htmlToExport,
           filename: 'resume.pdf',
         }),
       });
@@ -217,6 +276,7 @@ export const App: React.FC = () => {
         }
       }
 
+      setExportStatus('Downloading…');
       // Download the PDF
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -227,8 +287,15 @@ export const App: React.FC = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
+
+      // Mark artifact as exported
+      if (currentArtifact) {
+        setCurrentArtifact({ ...currentArtifact, status: 'exported' });
+      }
+      setExportStatus(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to download PDF');
+      setExportStatus(null);
     } finally {
       setIsExporting(false);
     }
@@ -293,6 +360,7 @@ export const App: React.FC = () => {
       </header>
 
       {error && <div className="error-banner">{error}</div>}
+      {exportStatus && <div className="status-banner">{exportStatus}</div>}
 
       <div className="app-layout">
         <aside className="left-panel">
@@ -355,9 +423,11 @@ export const App: React.FC = () => {
                 <h2>Generated Resume</h2>
                 <button
                   onClick={() => {
+                    setCurrentArtifact(null);
                     setGeneratedContent(null);
                     setGeneratedHtml(null);
                     setJobDescription('');
+                    setExportStatus(null);
                   }}
                   className="btn-small-danger"
                   title="Clear generated resume and job description"
@@ -382,11 +452,11 @@ export const App: React.FC = () => {
                 </button>
                 <button
                   onClick={handleDownloadPDF}
-                  disabled={isExporting}
+                  disabled={isExporting || documents.length === 0 || !jobDescription.trim()}
                   className="btn-primary"
-                  title="Download resume as PDF"
+                  title={documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Download resume as PDF'}
                 >
-                  {isExporting ? 'Generating PDF...' : 'Download PDF'}
+                  {exportStatus || (isExporting ? 'Exporting...' : 'Download PDF')}
                 </button>
               </div>
             </div>
@@ -595,6 +665,28 @@ export const App: React.FC = () => {
           color: var(--error-text);
           border-bottom: 1px solid var(--border-color);
           font-size: 14px;
+        }
+
+        .status-banner {
+          padding: 12px 24px;
+          background: #e3f2fd;
+          color: #1565c0;
+          border-bottom: 1px solid var(--border-color);
+          font-size: 14px;
+          font-weight: 500;
+          animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+
+        @media (prefers-color-scheme: dark) {
+          .status-banner {
+            background: #1a3a52;
+            color: #64b5f6;
+          }
         }
 
         .app-layout {
