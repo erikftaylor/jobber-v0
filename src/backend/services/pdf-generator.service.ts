@@ -12,11 +12,19 @@ export class PDFGenerator {
     if (!this.browser) {
       try {
         console.log('[PDFGenerator] Launching browser...');
+        // Try to use system Chrome first, fall back to bundled Chromium
+        const launchOptions = {
+          headless: 'new' as const,
+          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        };
+
+        // On macOS, try to use system Chrome
+        if (process.platform === 'darwin') {
+          launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+        }
+
         this.browser = await Promise.race([
-          puppeteer.launch({
-            headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-          }),
+          puppeteer.launch(launchOptions),
           new Promise((_, reject) =>
             setTimeout(
               () => reject(new Error('Browser launch timeout after 15 seconds')),
