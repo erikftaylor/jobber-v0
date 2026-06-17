@@ -4,6 +4,7 @@ import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { DatabaseService } from '../services/database.service';
 import { DocumentParserService } from '../services/document-parser.service';
+import { pdfGenerator } from '../services/pdf-generator.service';
 import type { Document } from '../../shared/types';
 
 const router = Router();
@@ -316,53 +317,77 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
 
   // POST /api/kb/pdf - Convert resume HTML to PDF
   router.post('/pdf', async (req: Request, res: Response) => {
+    console.log('[PDF] Request received');
+    let pdfBuffer: Buffer | null = null;
+
     try {
       const { html, filename } = req.body;
 
       if (!html) {
+        console.log('[PDF] No HTML provided');
         res.status(400).json({ error: 'HTML resume required' });
         return;
       }
 
       // Validate HTML is not too large
       if (html.length > 10 * 1024 * 1024) {
+        console.log('[PDF] HTML too large');
         res.status(400).json({ error: 'HTML content too large (max 10MB)' });
         return;
       }
 
-      console.log('[PDF] Generating PDF from HTML, size:', html.length, 'bytes');
+      console.log('[PDF] Starting PDF generation, HTML size:', html.length, 'bytes');
 
-      // Import PDF generator
-      const { pdfGenerator } = await import('../services/pdf-generator.service');
-
+      // Generate PDF with timeout
       try {
-        const pdfBuffer = await Promise.race([
-          pdfGenerator.htmlToPdf(html, filename),
+        pdfBuffer = await Promise.race([
+          (async () => {
+            console.log('[PDF] Calling pdfGenerator.htmlToPdf');
+            const result = await pdfGenerator.htmlToPdf(html, filename);
+            console.log('[PDF] htmlToPdf returned:', result?.length, 'bytes');
+            return result;
+          })(),
           new Promise<Buffer>((_, reject) =>
-            setTimeout(() => reject(new Error('PDF generation timeout (30s)')), 30000)
+            setTimeout(() => {
+              console.error('[PDF] Timeout waiting for PDF generation');
+              reject(new Error('PDF generation timeout (30s)'));
+            }, 30000)
           ),
         ]);
-
-        console.log('[PDF] Generated PDF, size:', Math.round(pdfBuffer.length / 1024), 'KB');
-
-        // Return PDF as file download
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="${filename || 'resume.pdf'}"`);
-        res.send(pdfBuffer);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error('[PDF] Generation error:', errorMsg);
-        throw err;
+      } catch (genErr) {
+        console.error('[PDF] Generation error:', genErr);
+        throw genErr;
       }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to generate PDF';
-      console.error('[PDF] Request error:', errorMsg);
 
-      // Don't crash the server, return 500 with error message
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: errorMsg || 'PDF generation failed. Please try again.',
-        });
+      if (!pdfBuffer || pdfBuffer.length === 0) {
+        const emptyErr = 'PDF generation produced empty buffer';
+        console.error('[PDF]', emptyErr);
+        throw new Error(emptyErr);
+      }
+
+      console.log('[PDF] Generated successfully, size:', Math.round(pdfBuffer.length / 1024), 'KB');
+
+      // Return PDF as file download
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename || 'resume.pdf'}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.send(pdfBuffer);
+      console.log('[PDF] Response sent successfully');
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('[PDF] Caught error:', errorMsg);
+      console.error('[PDF] Error stack:', error instanceof Error ? error.stack : 'no stack');
+
+      // Only send error if headers not already sent
+      try {
+        if (!res.headersSent) {
+          console.log('[PDF] Sending error response');
+          res.status(500).json({ error: errorMsg || 'PDF generation failed' });
+        } else {
+          console.error('[PDF] Headers already sent, cannot send error response');
+        }
+      } catch (resErr) {
+        console.error('[PDF] Error sending response:', resErr);
       }
     }
   });

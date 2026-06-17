@@ -6,85 +6,44 @@
 import puppeteer from 'puppeteer';
 
 export class PDFGenerator {
-  private browser: puppeteer.Browser | null = null;
-
-  async initialize(): Promise<void> {
-    if (!this.browser) {
-      try {
-        console.log('[PDFGenerator] Launching browser...');
-        // Try to use system Chrome first, fall back to bundled Chromium
-        const launchOptions = {
-          headless: 'new' as const,
-          args: ['--no-sandbox', '--disable-setuid-sandbox'],
-        };
-
-        // On macOS, try to use system Chrome
-        if (process.platform === 'darwin') {
-          launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-        }
-
-        this.browser = await Promise.race([
-          puppeteer.launch(launchOptions),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error('Browser launch timeout after 15 seconds')),
-              15000
-            )
-          ),
-        ]);
-        console.log('[PDFGenerator] Browser launched successfully');
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error('[PDFGenerator] Failed to launch browser:', errorMsg);
-        this.browser = null;
-        throw new Error(`Browser launch failed: ${errorMsg}`);
-      }
-    }
-  }
-
-  async close(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
-  }
-
   /**
-   * Convert HTML resume to PDF buffer
+   * Generate PDF without maintaining persistent browser
+   * Creates and closes browser for each request to avoid resource issues
    */
-  async htmlToPdf(html: string, filename?: string): Promise<Buffer> {
+  async generatePDF(html: string): Promise<Buffer> {
+    let browser: puppeteer.Browser | null = null;
     let page: puppeteer.Page | null = null;
 
     try {
-      console.log('[PDFGenerator] Initializing...');
-      await this.initialize();
+      console.log('[PDFGenerator] Launching browser for this request...');
 
-      if (!this.browser) {
-        throw new Error('Browser initialization failed');
+      const launchOptions: puppeteer.PuppeteerLaunchOptions = {
+        headless: 'new',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-gpu',
+          '--disable-dev-shm-usage',
+          '--disable-extensions',
+        ],
+        timeout: 10000,
+      };
+
+      // On macOS, try to use system Chrome
+      if (process.platform === 'darwin') {
+        launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
       }
 
-      console.log('[PDFGenerator] Creating page...');
-      page = await this.browser.newPage();
+      browser = await puppeteer.launch(launchOptions);
+      console.log('[PDFGenerator] Browser launched');
 
-      console.log('[PDFGenerator] Setting content...');
-      try {
-        await Promise.race([
-          page.setContent(html, {
-            waitUntil: 'domcontentloaded',
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Content load timeout')), 10000)
-          ),
-        ]);
-      } catch (err) {
-        console.warn('[PDFGenerator] Content load warning:', err);
-        // Try again with simpler approach
-        await page.setContent(html);
-      }
+      page = await browser.newPage();
+      console.log('[PDFGenerator] Page created');
 
-      console.log('[PDFGenerator] Generating PDF...');
-      // PDF options for letter-size, ATS-safe output
-      const pdfBuffer = await page.pdf({
+      await page.setContent(html, { waitUntil: 'domcontentloaded' });
+      console.log('[PDFGenerator] Content loaded');
+
+      const pdf = await page.pdf({
         format: 'letter',
         margin: {
           top: '0.6in',
@@ -93,24 +52,45 @@ export class PDFGenerator {
           left: '0.6in',
         },
         printBackground: true,
-        preferCSSPageSize: true,
       });
 
-      console.log('[PDFGenerator] PDF generated successfully');
-      return pdfBuffer;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error('[PDFGenerator] Error:', errorMsg);
-      throw new Error(`PDF generation failed: ${errorMsg}`);
+      console.log('[PDFGenerator] PDF generated:', pdf.length, 'bytes');
+      return pdf;
     } finally {
       if (page) {
         try {
           await page.close();
-        } catch (err) {
-          console.error('[PDFGenerator] Error closing page:', err);
+        } catch (e) {
+          console.warn('[PDFGenerator] Error closing page:', e);
+        }
+      }
+      if (browser) {
+        try {
+          await browser.close();
+        } catch (e) {
+          console.warn('[PDFGenerator] Error closing browser:', e);
         }
       }
     }
+  }
+
+  // Deprecated: keeping for backward compatibility
+  private browser: puppeteer.Browser | null = null;
+
+  async initialize(): Promise<void> {
+    // No-op for backward compatibility
+  }
+
+  async close(): Promise<void> {
+    // No-op for backward compatibility
+  }
+
+  /**
+   * Convert HTML resume to PDF buffer
+   * Uses generatePDF internally
+   */
+  async htmlToPdf(html: string, filename?: string): Promise<Buffer> {
+    return this.generatePDF(html);
   }
 }
 
