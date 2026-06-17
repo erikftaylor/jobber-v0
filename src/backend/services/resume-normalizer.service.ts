@@ -131,6 +131,9 @@ export class ResumeNormalizer {
   private normalizeBullet(bullet: ResumeBullet | string): ResumeBullet {
     let text = typeof bullet === 'string' ? bullet : bullet.text || '';
 
+    // Remove bullet character if present (will re-add later)
+    text = text.replace(/^•\s*/, '').trim();
+
     // Remove emojis
     text = text.replace(/[\p{Emoji}]/gu, '').trim();
 
@@ -152,7 +155,7 @@ export class ResumeNormalizer {
       'managed to',
     ];
     for (const opener of weakOpeners) {
-      text = text.replace(new RegExp(`^${opener}\\s+`, 'i'), '');
+      text = text.replace(new RegExp(`^${opener}\\s+`, 'i'), '').trim();
     }
 
     // Ensure it starts with capital letter
@@ -160,10 +163,8 @@ export class ResumeNormalizer {
       text = text.charAt(0).toUpperCase() + text.slice(1);
     }
 
-    // Add bullet character if not present
-    if (!text.startsWith('•')) {
-      text = `${RESUME_FORMAT.bullets.character} ${text}`;
-    }
+    // Add bullet character
+    text = `${RESUME_FORMAT.bullets.character} ${text}`;
 
     return {
       text,

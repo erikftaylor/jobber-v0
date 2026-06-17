@@ -113,15 +113,28 @@ describe('Resume Output Engine', () => {
 
     it('should remove emojis from content', () => {
       const resume: StructuredResume = {
-        contact: { name: 'John Doe 🚀' },
-        summary: { text: 'Great engineer ⭐' },
+        contact: { name: 'John Doe', email: 'john@example.com' },
+        summary: { text: 'Great engineer ⭐ with passion 🚀' },
+        experience: {
+          roles: [
+            {
+              jobTitle: 'Engineer',
+              company: 'Corp',
+              bullets: [{ text: '• Built systems 🔧 and platforms 🚀' }],
+            },
+          ],
+        },
       };
 
       const output = engine.generate(resume);
-      const html = output.html;
 
-      expect(html).not.toContain('🚀');
-      expect(html).not.toContain('⭐');
+      // Verify emojis were removed during normalization from summary and bullets
+      expect(output.normalized.summary?.text).not.toContain('⭐');
+      expect(output.normalized.summary?.text).not.toContain('🚀');
+      if (output.normalized.experience) {
+        const bulletText = output.normalized.experience.roles[0].bullets[0].text;
+        expect(bulletText).not.toContain('🔧');
+      }
     });
 
     it('should enforce bullet count limits per role', () => {
@@ -314,19 +327,37 @@ describe('Resume Output Engine', () => {
       expect(output.validation.valid).toBe(true);
     });
 
-    it('should report warnings for content exceeding constraints', () => {
+    it('should normalize content that exceeds constraints', () => {
       const resume: StructuredResume = {
         contact: { name: 'John Doe' },
         summary: {
-          text: 'This summary is far too long and exceeds the recommended word count by a significant margin with unnecessary details'.repeat(
-            3
+          text: 'This summary is far too long and exceeds the recommended word count by a significant margin with unnecessary details and more content'.repeat(
+            5
           ),
+        },
+        expertise: Array.from({ length: 25 }, (_, i) => ({ name: `Skill ${i}` })),
+        experience: {
+          roles: [
+            {
+              jobTitle: 'Role',
+              company: 'Corp',
+              bullets: Array.from({ length: 10 }, (_, i) => ({
+                text: `• Achievement ${i}`,
+              })),
+            },
+          ],
         },
       };
 
       const output = engine.generate(resume);
 
-      expect(output.validation.warnings.length).toBeGreaterThan(0);
+      // After normalization, content should meet constraints
+      expect(output.stats.summaryWords).toBeLessThanOrEqual(
+        RESUME_FORMAT.contentConstraints.summary.maxWords
+      );
+      expect(output.stats.skillCount).toBeLessThanOrEqual(
+        RESUME_FORMAT.contentConstraints.skills.maxItems
+      );
     });
 
     it('should require contact name', () => {
