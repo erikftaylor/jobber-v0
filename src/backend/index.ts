@@ -19,7 +19,7 @@ const synthesizer = new KnowledgeSynthesisService();
 
 // Middleware
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../dist')));
+app.use(express.static(path.join(process.cwd(), 'dist')));
 
 // API Routes
 app.use('/api/kb', createKnowledgeRoutes({ db, parser, extractor, synthesizer }));
@@ -32,7 +32,7 @@ app.get('/api/health', (req, res) => {
 // Serve React app (catch-all for SPA)
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api')) {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
+    res.sendFile(path.join(process.cwd(), 'dist/index.html'));
   } else {
     next();
   }
