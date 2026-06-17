@@ -13,7 +13,7 @@ const upload = multer({
   dest: path.join(process.cwd(), 'uploads'),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
-    const allowed = ['.pdf', '.docx', '.doc', '.txt'];
+    const allowed = ['.pdf', '.docx', '.doc', '.txt', '.md'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) {
       cb(null, true);
@@ -45,7 +45,7 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
         }
 
         const documentType = (req.body.type as Document['type']) || 'resume';
-        if (!['resume', 'cover_letter', 'case_study', 'linkedin'].includes(documentType)) {
+        if (!['resume', 'cover_letter', 'case_study', 'linkedin', 'portfolio'].includes(documentType)) {
           res.status(400).json({ error: 'Invalid document type' });
           return;
         }

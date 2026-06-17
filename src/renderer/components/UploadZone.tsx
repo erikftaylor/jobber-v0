@@ -39,9 +39,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onUpload, isLoading }) =
   };
 
   const handleFile = async (file: File) => {
-    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-    if (!validTypes.includes(file.type)) {
-      alert('Please upload a PDF, DOCX, or TXT file');
+    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'];
+    const validExtensions = ['.pdf', '.docx', '.doc', '.txt', '.md'];
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
+    if (!validTypes.includes(file.type) && !validExtensions.includes(ext)) {
+      alert('Please upload a PDF, DOCX, TXT, or Markdown file');
       return;
     }
 
@@ -61,6 +64,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onUpload, isLoading }) =
           <option value="cover_letter">Cover Letter</option>
           <option value="case_study">Case Study</option>
           <option value="linkedin">LinkedIn Profile</option>
+          <option value="portfolio">Portfolio / Project Notes</option>
         </select>
       </div>
 
@@ -76,7 +80,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onUpload, isLoading }) =
           id="file-input"
           onChange={handleChange}
           disabled={isLoading}
-          accept=".pdf,.docx,.doc,.txt"
+          accept=".pdf,.docx,.doc,.txt,.md"
           className="hidden"
         />
         <label htmlFor="file-input" className="dropzone-label">
@@ -88,7 +92,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ onUpload, isLoading }) =
           ) : (
             <>
               <p className="dropzone-text">Drop your file here or click to select</p>
-              <p className="dropzone-subtext">Supports PDF, DOCX, and TXT (max 10MB)</p>
+              <p className="dropzone-subtext">Supports PDF, DOCX, TXT, and Markdown (max 10MB)</p>
             </>
           )}
         </label>

@@ -19,6 +19,8 @@ export class DocumentParserService {
         return this.parseDocx(filePath);
       case '.txt':
         return this.parseText(filePath);
+      case '.md':
+        return this.parseMarkdown(filePath);
       default:
         throw new Error(`Unsupported file type: ${ext}`);
     }
@@ -53,6 +55,16 @@ export class DocumentParserService {
   }
 
   private async parseText(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      fs.readFile(filePath, 'utf-8', (err, data) => {
+        if (err) reject(err);
+        else resolve(data);
+      });
+    });
+  }
+
+  private async parseMarkdown(filePath: string): Promise<string> {
+    // Markdown is plain text, just read it
     return new Promise((resolve, reject) => {
       fs.readFile(filePath, 'utf-8', (err, data) => {
         if (err) reject(err);

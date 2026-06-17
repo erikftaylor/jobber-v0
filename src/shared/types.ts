@@ -70,7 +70,7 @@ export interface KnowledgeBase {
 
 export interface Document {
   id: string;
-  type: 'resume' | 'cover_letter' | 'case_study' | 'linkedin';
+  type: 'resume' | 'cover_letter' | 'case_study' | 'linkedin' | 'portfolio';
   filename: string;
   raw_text: string;
   uploaded_at: Date;

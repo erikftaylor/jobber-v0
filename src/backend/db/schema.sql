@@ -1,7 +1,7 @@
 -- Documents: uploaded source files (resume, cover letter, case study, LinkedIn)
 CREATE TABLE IF NOT EXISTS documents (
   id TEXT PRIMARY KEY,
-  type TEXT NOT NULL CHECK(type IN ('resume', 'cover_letter', 'case_study', 'linkedin')),
+  type TEXT NOT NULL CHECK(type IN ('resume', 'cover_letter', 'case_study', 'linkedin', 'portfolio')),
   filename TEXT NOT NULL,
   raw_text TEXT NOT NULL,
   uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
