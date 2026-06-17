@@ -349,9 +349,13 @@ export const App: React.FC = () => {
               <div className="generated-header">
                 <h2>Generated Resume</h2>
                 <button
-                  onClick={() => setGeneratedContent(null)}
+                  onClick={() => {
+                    setGeneratedContent(null);
+                    setGeneratedHtml(null);
+                    setJobDescription('');
+                  }}
                   className="btn-small-danger"
-                  title="Clear generated resume"
+                  title="Clear generated resume and job description"
                 >
                   Clear
                 </button>
