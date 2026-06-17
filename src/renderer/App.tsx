@@ -303,7 +303,16 @@ export const App: React.FC = () => {
 
           {generatedContent && (
             <div className="generated-section">
-              <h2>Generated Resume</h2>
+              <div className="generated-header">
+                <h2>Generated Resume</h2>
+                <button
+                  onClick={() => setGeneratedContent(null)}
+                  className="btn-small-danger"
+                  title="Clear generated resume"
+                >
+                  Clear
+                </button>
+              </div>
               <div className="generated-content">
                 {generatedContent.split('\n').map((line, i) => (
                   <p key={i}>{line || <br />}</p>
@@ -647,8 +656,15 @@ export const App: React.FC = () => {
           border-top: 1px solid var(--border-color);
         }
 
-        .generated-section h2 {
-          margin: 0 0 16px 0;
+        .generated-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .generated-header h2 {
+          margin: 0;
           font-size: 18px;
         }
 
