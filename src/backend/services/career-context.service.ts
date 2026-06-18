@@ -36,7 +36,7 @@ export class CareerContextService {
    * before this extraction.
    */
   build(documents: SourceDocument[]): CareerContext {
-    // TODO: Replace or augment raw document context with structured KB facts once KB freshness/status is operational.
+    // Career context is intentionally built from uploaded raw documents.
     const docs: RawCareerDocument[] = documents.map(d => ({
       id: d.id,
       filename: d.filename,

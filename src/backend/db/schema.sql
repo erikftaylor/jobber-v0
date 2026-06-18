@@ -18,23 +18,6 @@ CREATE TABLE IF NOT EXISTS documents (
   FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
--- Knowledge base: extracted & synthesized knowledge (one per session)
-CREATE TABLE IF NOT EXISTS knowledge_base (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL DEFAULT 'default',
-  skills JSON NOT NULL,           -- [{id, name, category, years_experience, confidence, source_document_id, source_excerpt, source_refs_json}]
-  achievements JSON NOT NULL,     -- [{id, title, context, metrics, skills_demonstrated, confidence, source_document_id, source_excerpt, source_refs_json}]
-  technologies JSON NOT NULL,     -- [{id, name, proficiency, confidence, source_document_id, source_excerpt, source_refs_json}]
-  writing_style JSON NOT NULL,    -- {tone, voice_markers, examples, confidence, source_refs_json}
-  "values" JSON NOT NULL,           -- [{value, confidence, source_document_id, source_excerpt, source_refs_json}]
-  extracted_at TIMESTAMP,
-  synthesized_at TIMESTAMP,
-  synthesis_version INT DEFAULT 1,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (session_id) REFERENCES sessions(id)
-);
-
 -- Jobs: job descriptions user wants to apply to
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,

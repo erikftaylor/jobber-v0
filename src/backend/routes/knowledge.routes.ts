@@ -27,8 +27,7 @@ const upload = multer({
 interface KnowledgeRouterDeps {
   db: DatabaseService;
   parser: DocumentParserService;
-  extractor?: any; // KnowledgeExtractionService
-  synthesizer?: any; // KnowledgeSynthesisService
+  extractor?: any; // Claude carrier: { claude } — generation calls extractor.claude.call(...)
   materialRepository?: GeneratedMaterialRepository; // persists successful generations
 }
 
@@ -234,92 +233,6 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
       console.error('Delete document error:', error);
       res.status(500).json({
         error: error instanceof Error ? error.message : 'Failed to delete document',
-      });
-    }
-  });
-
-  // POST /api/kb/refresh - Extract and synthesize knowledge from all documents
-  router.post('/refresh', async (req: Request, res: Response) => {
-    try {
-      if (!deps.extractor || !deps.synthesizer) {
-        console.warn('[KB Refresh] Claude API key not configured');
-        res.status(501).json({
-          error: 'Extraction not available - Claude API key not configured',
-          success: false,
-        });
-        return;
-      }
-
-      const documents = db.getAllDocuments();
-      console.log(`[KB Refresh] Starting extraction for ${documents.length} documents`);
-
-      if (documents.length === 0) {
-        console.log('[KB Refresh] No documents to extract');
-        res.json({
-          success: true,
-          message: 'No documents to extract from',
-          extractedDocuments: 0,
-        });
-        return;
-      }
-
-      // Extract knowledge from each document
-      console.log('[KB Refresh] Extracting knowledge from documents...');
-      const extractions = await Promise.all(
-        documents.map(doc => {
-          console.log(`[KB Refresh] Extracting from ${doc.filename}...`);
-          return deps.extractor.extractFromDocument(doc.id, doc.raw_text, doc.filename);
-        })
-      );
-
-      // Check if anything was extracted
-      const totalSkills = extractions.reduce((sum, e) => sum + e.skills.length, 0);
-      const totalAchievements = extractions.reduce((sum, e) => sum + e.achievements.length, 0);
-      const totalTechs = extractions.reduce((sum, e) => sum + e.technologies.length, 0);
-
-      console.log(
-        `[KB Refresh] Extracted: ${totalSkills} skills, ${totalAchievements} achievements, ${totalTechs} technologies`
-      );
-
-      // Synthesize all extractions
-      const synthesized = deps.synthesizer.synthesize(extractions);
-
-      // Update knowledge base
-      const updated = db.updateKnowledgeBase(
-        synthesized.skills,
-        synthesized.achievements,
-        synthesized.technologies,
-        synthesized.writingStyle,
-        synthesized.values,
-        new Date(),
-        new Date()
-      );
-
-      const message =
-        totalSkills + totalAchievements + totalTechs > 0
-          ? `Successfully extracted knowledge: ${totalSkills} skills, ${totalAchievements} achievements, ${totalTechs} technologies`
-          : 'Extraction completed but no structured data found. Documents may not contain clear skill, achievement, or technology information.';
-
-      console.log(`[KB Refresh] Completed. ${message}`);
-
-      res.json({
-        success: true,
-        message,
-        knowledgeBase: updated,
-        extractedDocuments: documents.length,
-        stats: {
-          skills: totalSkills,
-          achievements: totalAchievements,
-          technologies: totalTechs,
-        },
-      });
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error('[KB Refresh ERROR]:', errorMsg);
-      res.status(500).json({
-        error: errorMsg,
-        success: false,
-        message: 'Failed to refresh knowledge base',
       });
     }
   });

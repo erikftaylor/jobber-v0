@@ -3,8 +3,6 @@ import express from 'express';
 import path from 'path';
 import { DatabaseService } from './services/database.service';
 import { DocumentParserService } from './services/document-parser.service';
-import { KnowledgeExtractionService } from './services/knowledge-extraction.service';
-import { KnowledgeSynthesisService } from './services/knowledge-synthesis.service';
 import { ClaudeService } from './services/claude.service';
 import { createKnowledgeRoutes } from './routes/knowledge.routes';
 import { createHealthRoutes } from './routes/health.routes';
@@ -21,8 +19,8 @@ const port = process.env.PORT || 3000;
 const db = new DatabaseService();
 const parser = new DocumentParserService();
 const claude = new ClaudeService();
-const extractor = new KnowledgeExtractionService(claude);
-const synthesizer = new KnowledgeSynthesisService();
+// Minimal carrier: the generation path only needs `extractor.claude.call(...)`.
+const extractor = { claude };
 const materialRepository = new GeneratedMaterialRepository(db.getConnection());
 
 // Middleware
@@ -30,7 +28,7 @@ app.use(express.json());
 app.use(express.static(path.join(process.cwd(), 'dist')));
 
 // API Routes
-app.use('/api/kb', createKnowledgeRoutes({ db, parser, extractor, synthesizer, materialRepository }));
+app.use('/api/kb', createKnowledgeRoutes({ db, parser, extractor, materialRepository }));
 app.use('/api/materials', createMaterialRoutes({ repository: materialRepository }));
 
 // Health / readiness (cheap, never calls Claude). Claude is "configured" when an
@@ -60,4 +58,4 @@ app.listen(port, () => {
   console.log(`Open http://localhost:${port} in your browser`);
 });
 
-export { app, db, parser, extractor, synthesizer };
+export { app, db, parser, extractor };
