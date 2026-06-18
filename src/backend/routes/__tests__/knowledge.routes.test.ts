@@ -67,14 +67,19 @@ describe('Knowledge Routes', () => {
     cleanup(testDir);
   });
 
-  it('GET /api/kb should return knowledge base', async () => {
+  it('GET /api/kb should return documents and generation context', async () => {
     const res = await request(app).get('/api/kb');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.knowledgeBase).toBeDefined();
-    expect(res.body.knowledgeBase.skills).toEqual([]);
-    expect(res.body.knowledgeBase.synthesis_version).toBe(1);
+    // The route serves the raw-document context model that /generate consumes —
+    // not a structured knowledge base.
+    expect(res.body.documents).toEqual([]);
+    expect(res.body.context).toEqual({
+      total_documents: 0,
+      total_chars: 0,
+      ready_for_generation: false,
+    });
   });
 
   it('GET /api/kb/documents should return empty list initially', async () => {

@@ -112,118 +112,27 @@ export class KnowledgeExtractionService {
         console.error('[Extraction ERROR] JSON parse failed - Claude may have returned non-JSON');
       }
 
-      // Fallback: generate sample data from document for demonstration
-      console.log(`[Extraction] Using sample data mode for ${documentId}`);
-      return this.generateSampleExtraction(documentId, documentText, filename);
+      // On failure, return a safe empty extraction. We intentionally do NOT
+      // fabricate skills/achievements from keyword matching — every KB fact
+      // must stay grounded in the source document.
+      return this.emptyExtraction();
     }
   }
 
-  private generateSampleExtraction(
-    documentId: string,
-    documentText: string,
-    filename: string
-  ): ExtractionResult {
-    // Extract mentions of common skills/technologies from the text
-    const textLower = documentText.toLowerCase();
-
-    const commonSkills = [
-      { name: 'JavaScript', category: 'backend', years: 5 },
-      { name: 'React', category: 'frontend', years: 4 },
-      { name: 'TypeScript', category: 'backend', years: 3 },
-      { name: 'Node.js', category: 'backend', years: 4 },
-      { name: 'Python', category: 'backend', years: 3 },
-      { name: 'SQL', category: 'backend', years: 4 },
-      { name: 'Project Management', category: 'leadership', years: 5 },
-      { name: 'Team Leadership', category: 'leadership', years: 3 },
-    ];
-
-    const detectedSkills = commonSkills
-      .filter(skill => textLower.includes(skill.name.toLowerCase()))
-      .map(skill => ({
-        id: 'skill-' + uuid().replace(/-/g, '').substring(0, 16),
-        name: skill.name,
-        category: skill.category as 'frontend' | 'backend' | 'design' | 'leadership' | 'other',
-        years_experience: skill.years,
-        confidence: 0.85,
-        source_document_id: documentId,
-        source_excerpt: `Mentioned in ${filename}`,
-        source_refs_json: [
-          {
-            document_id: documentId,
-            excerpt: `Found reference to ${skill.name} in document`,
-            confidence: 0.85,
-          },
-        ],
-      }));
-
-    const detectedTechs = commonSkills
-      .filter(skill => textLower.includes(skill.name.toLowerCase()) && (skill.category === 'backend' || skill.category === 'frontend'))
-      .map(skill => ({
-        id: 'tech-' + uuid().replace(/-/g, '').substring(0, 16),
-        name: skill.name,
-        proficiency: 'intermediate' as const,
-        confidence: 0.80,
-        source_document_id: documentId,
-        source_excerpt: `Referenced in ${filename}`,
-        source_refs_json: [
-          {
-            document_id: documentId,
-            excerpt: `Experience with ${skill.name}`,
-            confidence: 0.80,
-          },
-        ],
-      }));
-
+  /** A valid, empty extraction result returned when Claude extraction fails. */
+  private emptyExtraction(): ExtractionResult {
     return {
-      skills: detectedSkills,
-      achievements: [
-        {
-          id: 'ach-' + uuid().replace(/-/g, '').substring(0, 16),
-          title: `Expertise in ${detectedSkills[0]?.name || 'Software Development'}`,
-          context: 'Professional experience',
-          metrics: ['Demonstrated proficiency'],
-          skills_demonstrated: detectedSkills.map(s => s.name),
-          confidence: 0.75,
-          source_document_id: documentId,
-          source_excerpt: 'Inferred from document content',
-          source_refs_json: [
-            {
-              document_id: documentId,
-              excerpt: 'Based on document analysis',
-              confidence: 0.75,
-            },
-          ],
-        },
-      ],
-      technologies: detectedTechs,
+      skills: [],
+      achievements: [],
+      technologies: [],
       writingStyle: {
         tone: 'professional',
-        voice_markers: ['clear', 'concise'],
-        examples: ['structured documentation'],
-        confidence: 0.7,
-        source_refs_json: [
-          {
-            document_id: documentId,
-            excerpt: 'Inferred from overall document tone and style',
-            confidence: 0.7,
-          },
-        ],
+        voice_markers: [],
+        examples: [],
+        confidence: 0,
+        source_refs_json: [],
       },
-      values: [
-        {
-          value: 'Continuous Learning',
-          confidence: 0.70,
-          source_document_id: documentId,
-          source_excerpt: 'Inferred from document',
-          source_refs_json: [
-            {
-              document_id: documentId,
-              excerpt: 'Based on growth-oriented content',
-              confidence: 0.70,
-            },
-          ],
-        },
-      ],
+      values: [],
     };
   }
 
