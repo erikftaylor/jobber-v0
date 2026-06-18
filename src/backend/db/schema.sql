@@ -66,8 +66,28 @@ CREATE TABLE IF NOT EXISTS conversations (
   FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 
+-- Generated resume artifacts: durable record of each successful generation so a
+-- result can be reopened later. Distinct from the unused `generated_materials`
+-- table above, which requires a job_id FK that the generation flow never creates.
+CREATE TABLE IF NOT EXISTS generated_resumes (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL DEFAULT 'resume' CHECK(type IN ('resume')),
+  title TEXT NOT NULL,
+  job_description_hash TEXT NOT NULL,
+  source_document_ids JSON NOT NULL,     -- string[]
+  generated_content TEXT NOT NULL,       -- raw Claude resume text
+  structured_resume_json JSON,           -- normalized StructuredResume; null on formatting fallback
+  rendered_html TEXT,                    -- ATS HTML; null on formatting fallback
+  formatting_error TEXT,                 -- set when the output engine fell back
+  format_version TEXT,
+  prompt_version TEXT,
+  model TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(type);
 CREATE INDEX IF NOT EXISTS idx_documents_uploaded_at ON documents(uploaded_at);
 CREATE INDEX IF NOT EXISTS idx_generated_materials_job_id ON generated_materials(job_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_job_id ON conversations(job_id);
+CREATE INDEX IF NOT EXISTS idx_generated_resumes_created_at ON generated_resumes(created_at);

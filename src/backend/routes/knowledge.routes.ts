@@ -1,13 +1,13 @@
-import express, { Router, Request, Response } from 'express';
+import express, { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { DatabaseService } from '../services/database.service';
 import { DocumentParserService } from '../services/document-parser.service';
 import { pdfGenerator } from '../services/pdf-generator.service';
+import { GenerateResumeUseCase } from '../use-cases/generate-resume.usecase';
+import type { GeneratedMaterialRepository } from '../repositories/generated-material.repository';
 import type { Document } from '../../shared/types';
-
-const router = Router();
 
 // Configure multer for file uploads
 const upload = multer({
@@ -29,10 +29,19 @@ interface KnowledgeRouterDeps {
   parser: DocumentParserService;
   extractor?: any; // KnowledgeExtractionService
   synthesizer?: any; // KnowledgeSynthesisService
+  materialRepository?: GeneratedMaterialRepository; // persists successful generations
 }
 
 export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
+  // Create a fresh router per call so invoking the factory more than once
+  // never stacks duplicate route registrations on a shared instance.
+  const router = Router();
   const { db, parser } = deps;
+  const generateResumeUseCase = new GenerateResumeUseCase({
+    db,
+    extractor: deps.extractor,
+    materialRepository: deps.materialRepository,
+  });
 
   // Session Management Routes
   router.get('/sessions', (req: Request, res: Response) => {
@@ -393,151 +402,12 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
   });
 
   // POST /api/kb/generate - Generate tailored resume for a job description
-  router.post('/generate', async (req: Request, res: Response) => {
+  router.post('/generate', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (!deps.extractor) {
-        res.status(501).json({
-          error: 'Claude API not configured - cannot generate materials',
-          success: false,
-        });
-        return;
-      }
-
-      const { job_description, material_type } = req.body;
-      if (!job_description) {
-        res.status(400).json({ error: 'Job description required' });
-        return;
-      }
-
-      const documents = db.getAllDocuments();
-      if (documents.length === 0) {
-        res.status(400).json({ error: 'No documents uploaded - upload your background documents first' });
-        return;
-      }
-
-      // Build context from uploaded documents
-      const documentContext = documents
-        .map(doc => `[${doc.type.toUpperCase()}: ${doc.filename}]\n${doc.raw_text}`)
-        .join('\n\n---\n\n');
-
-      const prompt = `You are an executive resume writer specializing in modern Product Design and UX resumes.
-
-Write a single-page executive resume based on the candidate's background documents and the target job description.
-
-CRITICAL FORMATTING RULES:
-- Exactly 5 bullet points for the current/most recent role
-- Exactly 4 bullet points for previous roles
-- Exactly 3 bullet points for older roles
-- Summary: maximum 65 words (positioning statement, not objective)
-- Expertise: maximum 8 items, displayed as a vertical list
-- Every bullet MUST start with a strong action verb
-- No weak openers: never use "responsible for", "helped", "worked on", "participated in"
-- Every bullet describes a meaningful problem solved with measurable impact
-- Bullets read naturally in 1-2 lines
-- Single column, left-aligned layout
-
-SECTION ORDER (EXACTLY):
-NAME
-SUMMARY
-CORE EXPERTISE
-PROFESSIONAL EXPERIENCE
-EDUCATION
-
-STYLE GUIDE:
-Summary: Executive positioning statement, not a job objective. Example:
-"Senior Product Designer with 8+ years designing complex enterprise and AI-native products. Expert in systems thinking, research, and transforming ambiguous problems into intuitive experiences."
-
-Strong action verbs to use:
-Architected, Designed, Established, Embedded, Facilitated, Conducted, Transformed, Streamlined, Reduced, Created
-
-Format output exactly as:
-
-[CANDIDATE NAME]
-
-SUMMARY
-[Executive positioning statement, max 65 words]
-
-CORE EXPERTISE
-[Skill 1]
-[Skill 2]
-[Skill 3]
-[Up to 8 items]
-
-PROFESSIONAL EXPERIENCE
-
-[Job Title]
-[Start Date] – [End Date]
-• [Strong action verb] [problem solved] [measurable impact]
-• [Next achievement...]
-
-[Repeat for other roles with exactly 4 or 3 bullets as appropriate]
-
-EDUCATION
-[Degree] • [School] • [Year]
-
----
-
-CANDIDATE'S BACKGROUND:
-${documentContext}
-
-TARGET JOB DESCRIPTION:
-${job_description}
-
-Now write the tailored executive resume following these rules exactly:`;
-
-      console.log(`[Generate] Creating resume from ${documents.length} documents`);
-
-      const response = await deps.extractor.claude.call(prompt);
-
-      console.log(`[Generate] Generated resume content`);
-
-      try {
-        // Parse generated text into structured resume
-        console.log('[Generate] Importing parser...');
-        const { resumeParser } = await import('../services/resume-parser.service');
-        console.log('[Generate] Parsing resume text...');
-        const structuredResume = resumeParser.parse(response.content);
-        console.log('[Generate] Parsed successfully');
-
-        // Pass through Resume Output Engine for formatting and validation
-        console.log('[Generate] Importing Resume Output Engine...');
-        const { resumeOutputEngine } = await import('../services/resume-output-engine.service');
-        console.log('[Generate] Generating formatted resume...');
-        const output = resumeOutputEngine.generate(structuredResume);
-        console.log(`[Generate] Resume formatted: ${output.stats.experienceRoles} roles, ${output.stats.summaryWords} summary words, ${output.stats.estimatedPages} pages`);
-
-        res.json({
-          success: true,
-          material_type: 'resume',
-          generated_content: response.content,
-          formatted_html: output.html, // ATS-formatted HTML for PDF
-          based_on_documents: documents.length,
-          stats: output.stats,
-          validation: {
-            valid: output.validation.valid,
-            warnings: output.validation.warnings,
-          },
-        });
-      } catch (formatError) {
-        const errorMsg = formatError instanceof Error ? formatError.message : String(formatError);
-        const errorStack = formatError instanceof Error ? formatError.stack : '';
-        console.error('[Generate] Formatting error:', errorMsg);
-        if (errorStack) console.error('[Generate] Stack:', errorStack);
-        // Fallback: return raw content without formatting
-        res.json({
-          success: true,
-          material_type: 'resume',
-          generated_content: response.content,
-          formatted_html: null,
-          based_on_documents: documents.length,
-          formatting_error: errorMsg,
-        });
-      }
+      const { statusCode, body } = await generateResumeUseCase.execute(req.body);
+      res.status(statusCode).json(body);
     } catch (error) {
-      console.error('Generate error:', error);
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'Failed to generate materials',
-      });
+      next(error);
     }
   });
 

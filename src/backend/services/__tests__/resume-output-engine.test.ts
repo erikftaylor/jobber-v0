@@ -7,7 +7,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { ResumeOutputEngine } from '../resume-output-engine.service';
 import { ResumeNormalizer } from '../resume-normalizer.service';
 import { ResumeValidator } from '../resume-validator.service';
-import { ResumeRenderer } from '../resume-renderer.service';
 import type { StructuredResume } from '../../../shared/resumeTypes';
 import { RESUME_FORMAT } from '../../../shared/resumeFormat';
 

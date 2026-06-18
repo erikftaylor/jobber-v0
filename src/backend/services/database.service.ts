@@ -248,6 +248,11 @@ export class DatabaseService {
     return this.getKnowledgeBase()!;
   }
 
+  /** Expose the underlying connection so repositories can own their own SQL. */
+  getConnection(): Database.Database {
+    return this.db;
+  }
+
   close(): void {
     this.db.close();
   }

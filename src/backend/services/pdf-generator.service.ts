@@ -17,7 +17,7 @@ export class PDFGenerator {
 
         const doc = new PDFDocument({
           size: 'Letter',
-          margin: {
+          margins: {
             top: 43, // 0.6in in points
             right: 43,
             bottom: 43,

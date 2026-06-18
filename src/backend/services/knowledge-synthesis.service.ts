@@ -145,11 +145,11 @@ export class KnowledgeSynthesisService {
 
     // Use highest proficiency level
     const proficiencyRank = { beginner: 1, intermediate: 2, expert: 3 };
-    const bestProficiency = technologies.reduce((best, t) => {
-      return proficiencyRank[t.proficiency] > proficiencyRank[best.proficiency]
-        ? t.proficiency
-        : best.proficiency;
-    });
+    const bestProficiency = technologies.reduce<'beginner' | 'intermediate' | 'expert'>(
+      (best, t) =>
+        proficiencyRank[t.proficiency] > proficiencyRank[best] ? t.proficiency : best,
+      technologies[0].proficiency
+    );
 
     return {
       id: 'tech-' + uuid().replace(/-/g, '').substring(0, 16),

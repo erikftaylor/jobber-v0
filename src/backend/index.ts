@@ -7,6 +7,10 @@ import { KnowledgeExtractionService } from './services/knowledge-extraction.serv
 import { KnowledgeSynthesisService } from './services/knowledge-synthesis.service';
 import { ClaudeService } from './services/claude.service';
 import { createKnowledgeRoutes } from './routes/knowledge.routes';
+import { createHealthRoutes } from './routes/health.routes';
+import { createMaterialRoutes } from './routes/materials.routes';
+import { GeneratedMaterialRepository } from './repositories/generated-material.repository';
+import { errorHandler } from './middleware/error-handler';
 
 dotenv.config();
 
@@ -19,18 +23,25 @@ const parser = new DocumentParserService();
 const claude = new ClaudeService();
 const extractor = new KnowledgeExtractionService(claude);
 const synthesizer = new KnowledgeSynthesisService();
+const materialRepository = new GeneratedMaterialRepository(db.getConnection());
 
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(process.cwd(), 'dist')));
 
 // API Routes
-app.use('/api/kb', createKnowledgeRoutes({ db, parser, extractor, synthesizer }));
+app.use('/api/kb', createKnowledgeRoutes({ db, parser, extractor, synthesizer, materialRepository }));
+app.use('/api/materials', createMaterialRoutes({ repository: materialRepository }));
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
+// Health / readiness (cheap, never calls Claude). Claude is "configured" when an
+// API key is present — the extractor itself is always constructed.
+app.use(
+  '/api',
+  createHealthRoutes({
+    db,
+    isClaudeConfigured: () => !!process.env.ANTHROPIC_API_KEY,
+  })
+);
 
 // Serve React app (catch-all for SPA)
 app.use((req, res, next) => {
@@ -41,13 +52,8 @@ app.use((req, res, next) => {
   }
 });
 
-// Error handling
-app.use((err: any, req: express.Request, res: express.Response) => {
-  console.error('Server error:', err);
-  res.status(500).json({
-    error: err.message || 'Internal server error',
-  });
-});
+// Error handling (must be registered last, with the 4-arg signature)
+app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`Jobber server listening on port ${port}`);

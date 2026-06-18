@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { UploadZone } from './components/UploadZone';
 import type { Document } from '../shared/types';
+import { fetchSavedResumes, fetchSavedResume, formatSavedDate, type SavedResume } from './savedResumes';
 
 interface Session {
   id: string;
@@ -43,10 +44,14 @@ export const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [savedResumes, setSavedResumes] = useState<SavedResume[]>([]);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [savedError, setSavedError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSessions();
     loadDocuments();
+    loadSavedResumes();
   }, []);
 
   const loadSessions = async () => {
@@ -72,6 +77,44 @@ export const App: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setIsLoadingDocs(false);
+    }
+  };
+
+  // Load saved résumé artifacts. Never blocks the generate flow — failures are
+  // surfaced only in the saved-résumés section.
+  const loadSavedResumes = async () => {
+    try {
+      setIsLoadingSaved(true);
+      setSavedError(null);
+      setSavedResumes(await fetchSavedResumes());
+    } catch (err) {
+      setSavedError(err instanceof Error ? err.message : 'Failed to load saved résumés');
+    } finally {
+      setIsLoadingSaved(false);
+    }
+  };
+
+  // Reopen a saved résumé into the same state the generate flow uses, so the
+  // existing preview/export path works unchanged.
+  const handleOpenSavedResume = async (id: string) => {
+    try {
+      setError(null);
+      setSavedError(null);
+      const material = await fetchSavedResume(id);
+      const artifact: ResumeArtifact = {
+        id: `artifact-${Date.now()}`,
+        version: 1,
+        status: 'generated',
+        content: material.generated_content,
+        html: material.formatted_html,
+        generatedAt: new Date(material.created_at),
+        jobDescription: '',
+      };
+      setCurrentArtifact(artifact);
+      setGeneratedContent(material.generated_content);
+      setGeneratedHtml(material.formatted_html);
+    } catch (err) {
+      setSavedError(err instanceof Error ? err.message : 'Failed to open saved résumé');
     }
   };
 
@@ -204,6 +247,12 @@ export const App: React.FC = () => {
         generatedAt: new Date(),
         jobDescription: jd,
       };
+
+      // If the backend persisted this generation, refresh the saved list
+      // (fire-and-forget — never blocks the generate flow).
+      if (data.artifact_id) {
+        loadSavedResumes();
+      }
 
       return artifact;
     } catch (err) {
@@ -453,9 +502,9 @@ export const App: React.FC = () => {
                 </button>
                 <button
                   onClick={handleDownloadPDF}
-                  disabled={isExporting || documents.length === 0 || !jobDescription.trim()}
+                  disabled={isExporting || (!currentArtifact && (documents.length === 0 || !jobDescription.trim()))}
                   className="btn-primary"
-                  title={documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Open resume in new tab to print/save as PDF'}
+                  title={currentArtifact ? 'Open resume in new tab to print/save as PDF' : documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Open resume in new tab to print/save as PDF'}
                 >
                   {exportStatus || (isExporting ? 'Exporting...' : 'Export as PDF')}
                 </button>
@@ -465,6 +514,31 @@ export const App: React.FC = () => {
         </main>
 
         <aside className="right-panel">
+          <div className="saved-panel">
+            <h3>Saved Résumés ({savedResumes.length})</h3>
+            {isLoadingSaved ? (
+              <p className="loading">Loading...</p>
+            ) : savedError ? (
+              <p className="empty">{savedError}</p>
+            ) : savedResumes.length === 0 ? (
+              <p className="empty">No saved résumés yet</p>
+            ) : (
+              <div className="saved-list">
+                {savedResumes.map(m => (
+                  <button
+                    key={m.id}
+                    className="saved-item"
+                    onClick={() => handleOpenSavedResume(m.id)}
+                    title="Open this saved résumé"
+                  >
+                    <span className="saved-title">{m.title}</span>
+                    <span className="saved-meta">{m.type} · {formatSavedDate(m.created_at)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="info-panel">
             <h3>How it works</h3>
             <ol>
@@ -877,6 +951,52 @@ export const App: React.FC = () => {
           font-size: 12px;
           margin: 0;
           line-height: 1.4;
+        }
+
+        .saved-panel {
+          margin-bottom: 16px;
+        }
+
+        .saved-panel h3 {
+          margin: 0 0 12px 0;
+          font-size: 14px;
+        }
+
+        .saved-list {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .saved-item {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          text-align: left;
+          padding: 8px 10px;
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          background: var(--input-bg);
+          color: var(--text-primary);
+          cursor: pointer;
+        }
+
+        .saved-item:hover {
+          border-color: var(--accent);
+          background: var(--accent-bg);
+        }
+
+        .saved-title {
+          font-size: 13px;
+          font-weight: 600;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .saved-meta {
+          font-size: 11px;
+          color: var(--text-secondary);
         }
       `}</style>
     </div>

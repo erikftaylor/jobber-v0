@@ -5,7 +5,8 @@ import { DocumentParserService } from '../document-parser.service';
 
 describe('DocumentParserService', () => {
   const parser = new DocumentParserService();
-  const testDir = path.join(process.cwd(), 'test-fixtures');
+  // Own subdirectory so a sibling test file's fixture cleanup can't delete ours.
+  const testDir = path.join(process.cwd(), 'test-fixtures', 'document-parser');
   const txtFile = path.join(testDir, 'test.txt');
   const docxFile = path.join(testDir, 'test.docx');
 
