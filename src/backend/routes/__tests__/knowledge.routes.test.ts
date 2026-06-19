@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import fs from 'fs';
@@ -7,6 +7,14 @@ import { DatabaseService } from '../../services/database.service';
 import { DocumentParserService } from '../../services/document-parser.service';
 import { createKnowledgeRoutes } from '../knowledge.routes';
 import { errorHandler } from '../../middleware/error-handler';
+import { pdfGenerator } from '../../services/pdf-generator.service';
+
+// Stub the PDF generator so the /pdf route resolves instantly without launching
+// a real (puppeteer) browser. Lets us assert the generation-timeout timer is
+// cleared after a fast success instead of firing a delayed false timeout.
+vi.mock('../../services/pdf-generator.service', () => ({
+  pdfGenerator: { htmlToPdf: vi.fn() },
+}));
 
 describe('Knowledge Routes', () => {
   const testDbPath = path.join(process.cwd(), 'test-data', 'test-routes.db');
@@ -137,6 +145,32 @@ describe('Knowledge Routes', () => {
     // same object and accumulate routes on every invocation.
     expect(r1).not.toBe(r2);
     expect(r2.stack.length).toBe(r1.stack.length);
+  });
+
+  it('POST /api/kb/pdf clears the generation timeout after a fast success (no delayed false timeout)', async () => {
+    vi.mocked(pdfGenerator.htmlToPdf).mockResolvedValue(Buffer.from('%PDF-1.4 test'));
+    const setSpy = vi.spyOn(global, 'setTimeout');
+    const clearSpy = vi.spyOn(global, 'clearTimeout');
+
+    try {
+      const res = await request(app)
+        .post('/api/kb/pdf')
+        .send({ html: '<!DOCTYPE html><html><body>Hi</body></html>', filename: 'r.pdf' });
+
+      // Success behavior is unchanged.
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('application/pdf');
+
+      // The 30s timeout timer must be cleared once generation resolves, so it
+      // can never fire the false "[PDF] Timeout..." log/rejection afterwards.
+      const idx = setSpy.mock.calls.findIndex(args => args[1] === 30000);
+      expect(idx).toBeGreaterThanOrEqual(0);
+      const timerId = setSpy.mock.results[idx].value;
+      expect(clearSpy).toHaveBeenCalledWith(timerId);
+    } finally {
+      setSpy.mockRestore();
+      clearSpy.mockRestore();
+    }
   });
 
   it('POST /api/kb/generate delegates to the use case and returns 501 when Claude is not configured', async () => {

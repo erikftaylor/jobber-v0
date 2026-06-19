@@ -261,7 +261,15 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
       console.log('[PDF] Starting PDF generation, HTML size:', html.length, 'bytes');
 
       // Generate PDF with timeout
+      let timeoutId: NodeJS.Timeout | undefined;
       try {
+        const timeoutPromise = new Promise<Buffer>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            console.error('[PDF] Timeout waiting for PDF generation');
+            reject(new Error('PDF generation timeout (30s)'));
+          }, 30000);
+        });
+
         pdfBuffer = await Promise.race([
           (async () => {
             console.log('[PDF] Calling pdfGenerator.htmlToPdf');
@@ -269,16 +277,16 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
             console.log('[PDF] htmlToPdf returned:', result?.length, 'bytes');
             return result;
           })(),
-          new Promise<Buffer>((_, reject) =>
-            setTimeout(() => {
-              console.error('[PDF] Timeout waiting for PDF generation');
-              reject(new Error('PDF generation timeout (30s)'));
-            }, 30000)
-          ),
+          timeoutPromise,
         ]);
       } catch (genErr) {
         console.error('[PDF] Generation error:', genErr);
         throw genErr;
+      } finally {
+        // Clear the timer once the race settles so a fast success/failure
+        // doesn't later fire a false "[PDF] Timeout..." log and reject an
+        // already-settled promise.
+        if (timeoutId) clearTimeout(timeoutId);
       }
 
       if (!pdfBuffer || pdfBuffer.length === 0) {
