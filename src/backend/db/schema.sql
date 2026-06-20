@@ -1,3 +1,12 @@
+-- App state: durable key/value store for process-level state that must survive a
+-- restart. Notably `active_session_id` — previously held only in memory, which
+-- silently hid session-scoped documents after a restart (the active session
+-- reverted to 'default' while the rows stayed under their original session).
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 -- Sessions: separate knowledge bases for different contexts (jobs, applications, etc.)
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,

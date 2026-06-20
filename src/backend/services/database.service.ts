@@ -14,6 +14,15 @@ export class DatabaseService {
     this.ensureDataDirectory();
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
+    // Durability: fsync every commit so a power loss / OS crash cannot lose a
+    // committed write. This is a low-write desktop workload, so the cost is
+    // negligible and the safety is worth it given documents were being lost.
+    this.db.pragma('synchronous = FULL');
+    // Keep the WAL from growing unbounded between runs. Combined with the
+    // checkpoint on close() (and the SIGINT/SIGTERM handler in index.ts), this
+    // keeps committed data flowing into the main db file rather than living
+    // only in jobber.db-wal.
+    this.db.pragma('wal_autocheckpoint = 1000');
     this.initializeSchema();
   }
 
@@ -37,6 +46,35 @@ export class DatabaseService {
       this.db.prepare('INSERT INTO sessions (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
         .run('default', 'Default Session', now, now);
     }
+
+    // Restore the active session that was in effect before the last shutdown.
+    // Without this, the active session reverts to 'default' on every restart and
+    // documents uploaded under another session silently disappear from view.
+    this.activeSessionId = this.loadActiveSession();
+  }
+
+  /** Read the persisted active session id, falling back to 'default' if it is
+   * unset or points at a session that no longer exists. */
+  private loadActiveSession(): string {
+    const row = this.db
+      .prepare("SELECT value FROM app_state WHERE key = 'active_session_id'")
+      .get() as { value?: string } | undefined;
+    const candidate = row?.value;
+    if (candidate) {
+      const exists = this.db.prepare('SELECT id FROM sessions WHERE id = ?').get(candidate);
+      if (exists) return candidate;
+    }
+    return 'default';
+  }
+
+  /** Durably record the active session id so it survives a restart. */
+  private persistActiveSession(): void {
+    this.db
+      .prepare(
+        `INSERT INTO app_state (key, value) VALUES ('active_session_id', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run(this.activeSessionId);
   }
 
   // Session Management
@@ -63,6 +101,7 @@ export class DatabaseService {
     const session = this.db.prepare('SELECT id FROM sessions WHERE id = ?').get(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
     this.activeSessionId = sessionId;
+    this.persistActiveSession();
   }
 
   getActiveSession(): string {
@@ -75,6 +114,7 @@ export class DatabaseService {
     this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
     if (this.activeSessionId === sessionId) {
       this.activeSessionId = 'default';
+      this.persistActiveSession();
     }
   }
 
@@ -148,6 +188,14 @@ export class DatabaseService {
   }
 
   close(): void {
+    // Drain the WAL into the main db file before closing so committed data is
+    // not left living only in jobber.db-wal. TRUNCATE also resets the WAL file
+    // size. Best-effort: never let checkpoint failure block a clean shutdown.
+    try {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch {
+      // ignore — close() below still flushes on the last connection
+    }
     this.db.close();
   }
 }

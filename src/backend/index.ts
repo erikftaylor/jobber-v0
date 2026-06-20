@@ -53,9 +53,41 @@ app.use((req, res, next) => {
 // Error handling (must be registered last, with the 4-arg signature)
 app.use(errorHandler);
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Jobber server listening on port ${port}`);
   console.log(`Open http://localhost:${port} in your browser`);
 });
+
+// Graceful shutdown: stop accepting connections, then checkpoint + close the DB
+// so committed writes are flushed from the WAL into jobber.db instead of being
+// left only in jobber.db-wal. Guarded so a slow server.close() can't strand the
+// DB unclosed, and so double-signals don't double-close.
+let isShuttingDown = false;
+function shutdown(signal: NodeJS.Signals): void {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n${signal} received — shutting down gracefully...`);
+
+  const finalize = (code: number) => {
+    try {
+      db.close(); // runs PRAGMA wal_checkpoint(TRUNCATE) then closes
+      console.log('Database checkpointed and closed.');
+    } catch (err) {
+      console.error('Error closing database during shutdown:', err);
+    }
+    process.exit(code);
+  };
+
+  server.close(() => finalize(0));
+
+  // Don't wait forever on lingering keep-alive connections.
+  setTimeout(() => {
+    console.error('Shutdown timed out — forcing exit.');
+    finalize(1);
+  }, 5000).unref();
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 export { app, db, parser, extractor };

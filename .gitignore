@@ -16,3 +16,8 @@ test-fixtures/
 *.db-wal
 *.sqlite-shm
 *.sqlite-wal
+# Runtime SQLite database — the app bootstraps this from schema.sql on first run,
+# so it is local runtime state, not seed data, and must not be tracked.
+data/*.db
+data/*.db-wal
+data/*.db-shm
