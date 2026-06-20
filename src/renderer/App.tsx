@@ -25,6 +25,7 @@ interface ResumeArtifact {
   html: string | null;
   generatedAt: Date;
   jobDescription: string;
+  resumeId?: string; // Backend-persisted resume ID (for DOCX/archive exports)
 }
 
 export const App: React.FC = () => {
@@ -73,6 +74,9 @@ export const App: React.FC = () => {
       if (!response.ok) throw new Error('Failed to load documents');
       const data = await response.json();
       setDocuments(data.documents || []);
+      // Clear any stale error from an earlier failed load (e.g. backend not yet
+      // up on first mount) so the banner self-heals once a load succeeds.
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -246,6 +250,7 @@ export const App: React.FC = () => {
         html: data.formatted_html,
         generatedAt: new Date(),
         jobDescription: jd,
+        resumeId: data.artifact_id, // Persisted resume ID from backend
       };
 
       // If the backend persisted this generation, refresh the saved list
@@ -345,6 +350,64 @@ export const App: React.FC = () => {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to export resume');
+      setExportStatus(null);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDownloadDOCX = async () => {
+    try {
+      setIsExporting(true);
+      setError(null);
+
+      // If no artifact exists, generate one
+      if (!currentArtifact) {
+        setExportStatus('Generating tailored resume…');
+        const artifact = await generateResume();
+        if (!artifact) return;
+        setCurrentArtifact(artifact);
+        setGeneratedContent(artifact.content);
+        setGeneratedHtml(artifact.html);
+      }
+
+      // Need a resumeId (artifact_id from backend)
+      if (!currentArtifact?.resumeId) {
+        throw new Error('Resume not yet saved. Please try again after generation completes.');
+      }
+
+      // Call the DOCX export endpoint
+      setExportStatus('Exporting to DOCX…');
+      const response = await fetch('/api/kb/docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeId: currentArtifact.resumeId }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to export DOCX');
+      }
+
+      // Get the DOCX file as a blob
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'resume.docx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      // Mark artifact as exported
+      if (currentArtifact) {
+        setCurrentArtifact({ ...currentArtifact, status: 'exported' });
+      }
+      setExportStatus(null);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export DOCX');
       setExportStatus(null);
     } finally {
       setIsExporting(false);
@@ -507,6 +570,14 @@ export const App: React.FC = () => {
                   title={currentArtifact ? 'Open resume in new tab to print/save as PDF' : documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Open resume in new tab to print/save as PDF'}
                 >
                   {exportStatus || (isExporting ? 'Exporting...' : 'Export as PDF')}
+                </button>
+                <button
+                  onClick={handleDownloadDOCX}
+                  disabled={isExporting || (!currentArtifact && (documents.length === 0 || !jobDescription.trim()))}
+                  className="btn-primary"
+                  title={currentArtifact ? 'Download resume as DOCX for editing' : documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Download resume as DOCX for editing'}
+                >
+                  {isExporting && exportStatus === 'Exporting to DOCX…' ? 'Exporting DOCX...' : 'Export as DOCX'}
                 </button>
               </div>
             </div>
