@@ -173,6 +173,112 @@ describe('Knowledge Routes', () => {
     }
   });
 
+  it('POST /api/kb/docx requires resumeId in request body', async () => {
+    const res = await request(app).post('/api/kb/docx').send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('resumeId');
+  });
+
+  it('POST /api/kb/docx returns 404 for unknown resume ID', async () => {
+    const res = await request(app).post('/api/kb/docx').send({ resumeId: 'unknown-id-xyz' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it('POST /api/kb/docx returns 400 if resume has empty content', async () => {
+    // Insert a resume with empty content into the database
+    const connection = db.getConnection();
+    connection
+      .prepare(
+        `INSERT INTO generated_resumes (id, type, title, job_description_hash, source_document_ids, generated_content)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run('empty-resume-id', 'resume', 'Test Resume', 'hash123', '[]', '');
+
+    const res = await request(app).post('/api/kb/docx').send({ resumeId: 'empty-resume-id' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('empty');
+  });
+
+  it('POST /api/kb/docx returns DOCX buffer with correct headers on success', async () => {
+    // Insert a valid resume into the database
+    const connection = db.getConnection();
+    const resumeContent = `Jane Doe
+
+SUMMARY
+Senior Software Engineer with 8 years of experience.
+
+EXPERIENCE
+Staff Engineer, TechCorp | 2023 – Present
+- Led critical infrastructure project
+
+SKILLS
+TypeScript • React • Node.js`;
+
+    connection
+      .prepare(
+        `INSERT INTO generated_resumes (id, type, title, job_description_hash, source_document_ids, generated_content)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run('test-resume-id', 'resume', 'Senior Engineer Resume', 'hash123', '[]', resumeContent);
+
+    const res = await request(app)
+      .post('/api/kb/docx')
+      .send({ resumeId: 'test-resume-id' })
+      .responseType('arraybuffer'); // Expect binary response
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    );
+    expect(res.headers['content-disposition']).toMatch(/attachment.*filename="resume\.docx"/);
+    expect(Buffer.isBuffer(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
+  });
+
+  it('POST /api/kb/docx response is a valid DOCX file (ZIP structure)', async () => {
+    // Insert a valid resume
+    const connection = db.getConnection();
+    const resumeContent = `John Smith
+
+SUMMARY
+Product Manager with excellent communication skills.
+
+SKILLS
+Product Strategy • Communication • Analytics`;
+
+    connection
+      .prepare(
+        `INSERT INTO generated_resumes (id, type, title, job_description_hash, source_document_ids, generated_content)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run('pm-resume-id', 'resume', 'PM Resume', 'hash456', '[]', resumeContent);
+
+    const res = await request(app)
+      .post('/api/kb/docx')
+      .send({ resumeId: 'pm-resume-id' })
+      .responseType('arraybuffer'); // Expect binary response
+
+    expect(res.status).toBe(200);
+
+    // Verify DOCX ZIP structure
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip(res.body);
+    const entries = zip.getEntries();
+
+    expect(entries.length).toBeGreaterThan(0);
+    const docXmlEntry = entries.find((e: any) => e.entryName === 'word/document.xml');
+    expect(docXmlEntry).toBeDefined();
+
+    // Verify content is in the document
+    const docXml = docXmlEntry.getData().toString('utf-8');
+    expect(docXml).toContain('John Smith');
+    expect(docXml).toContain('Product Manager');
+  });
+
   it('POST /api/kb/generate delegates to the use case and returns 501 when Claude is not configured', async () => {
     // This app is mounted without an extractor, so the use case short-circuits.
     const res = await request(app).post('/api/kb/generate').send({ job_description: 'Senior PD role' });

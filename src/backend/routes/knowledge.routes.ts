@@ -322,6 +322,54 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
     }
   });
 
+  // POST /api/kb/docx - Export a saved resume as DOCX
+  router.post('/docx', async (req: Request, res: Response) => {
+    try {
+      const { resumeId } = req.body;
+
+      if (!resumeId) {
+        res.status(400).json({ error: 'resumeId is required' });
+        return;
+      }
+
+      // Look up the saved resume in the database
+      const connection = db.getConnection();
+      const resume = connection
+        .prepare('SELECT id, generated_content FROM generated_resumes WHERE id = ?')
+        .get(resumeId) as { id: string; generated_content: string } | undefined;
+
+      if (!resume) {
+        res.status(404).json({ error: `Resume ${resumeId} not found` });
+        return;
+      }
+
+      if (!resume.generated_content || !resume.generated_content.trim()) {
+        res.status(400).json({ error: 'Resume content is empty' });
+        return;
+      }
+
+      // Generate DOCX from the resume content
+      const { docxGeneratorService } = await import('../services/docx-generator.service');
+      const docxBuffer = await docxGeneratorService.generate(resume.generated_content);
+
+      // Set response headers for file download
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      );
+      res.setHeader('Content-Disposition', 'attachment; filename="resume.docx"');
+      res.setHeader('Content-Length', docxBuffer.length);
+
+      // Send the DOCX buffer
+      res.send(docxBuffer);
+    } catch (error) {
+      console.error('DOCX export error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'DOCX export failed',
+      });
+    }
+  });
+
   // POST /api/kb/generate - Generate tailored resume for a job description
   router.post('/generate', async (req: Request, res: Response, next: NextFunction) => {
     try {
