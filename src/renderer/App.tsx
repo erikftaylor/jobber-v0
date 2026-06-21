@@ -289,8 +289,6 @@ export const App: React.FC = () => {
   };
 
   const handleDownloadPDF = async () => {
-    let htmlToExport = currentArtifact?.html || generatedHtml;
-
     try {
       setIsExporting(true);
       setError(null);
@@ -303,47 +301,36 @@ export const App: React.FC = () => {
         setCurrentArtifact(artifact);
         setGeneratedContent(artifact.content);
         setGeneratedHtml(artifact.html);
-        htmlToExport = artifact.html;
       }
 
-      // Validate artifact has necessary content
-      if (!htmlToExport) {
-        if (!currentArtifact?.content) {
-          throw new Error('No resume content found. Please generate a resume first.');
-        }
-        // If we have content but no HTML, create a basic HTML wrapper
-        setExportStatus('Preparing resume for export…');
-        htmlToExport = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Resume</title>
-  <style>
-    body { font-family: Arial, sans-serif; line-height: 1.5; margin: 40px; }
-    h2 { margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
-  </style>
-</head>
-<body>
-<pre>${currentArtifact.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-</body>
-</html>`;
+      // Need a resumeId (artifact_id from backend)
+      if (!currentArtifact?.resumeId) {
+        throw new Error('Resume not yet saved. Please try again after generation completes.');
       }
 
-      // Open HTML in new tab for user to print/save as PDF
-      setExportStatus('Opening resume in new tab…');
-      const htmlBlob = new Blob([htmlToExport], { type: 'text/html;charset=utf-8' });
-      const url = window.URL.createObjectURL(htmlBlob);
-      const newTab = window.open(url, '_blank', 'noopener,noreferrer');
+      // Call the PDF export endpoint
+      setExportStatus('Exporting to PDF…');
+      const response = await fetch('/api/kb/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeId: currentArtifact.resumeId }),
+      });
 
-      if (!newTab) {
-        throw new Error('Could not open new tab. Please check popup blocker settings.');
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to export PDF');
       }
 
-      // Allow the blob to persist for the new tab
-      setTimeout(() => {
-        // Clean up after the tab has loaded (1 second should be enough)
-        // Actually, keep the URL alive for the tab's lifetime
-      }, 1000);
+      // Get the PDF file as a blob
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'tailored-resume.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
 
       // Mark artifact as exported
       if (currentArtifact) {
@@ -352,7 +339,7 @@ export const App: React.FC = () => {
       setExportStatus(null);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export resume');
+      setError(err instanceof Error ? err.message : 'Failed to export PDF');
       setExportStatus(null);
     } finally {
       setIsExporting(false);
@@ -397,7 +384,7 @@ export const App: React.FC = () => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'resume.docx';
+      link.download = 'tailored-resume.docx';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
