@@ -641,59 +641,72 @@ export const App: React.FC = () => {
           </div>
         </aside>
 
-        <main className="center-panel">
-          <div className="generator-section">
-            <h2>Generate Tailored Resume</h2>
-            <div className="generator-form">
-              <label>Job Description</label>
-              <textarea
-                value={jobDescription}
-                onChange={(e) => setJobDescription(e.target.value)}
-                placeholder="Paste the job description here..."
-                rows={8}
-                disabled={isGenerating}
-              />
-              <button
-                onClick={handleGenerate}
-                disabled={isGenerating || documents.length === 0}
-                className="btn-primary btn-large"
-              >
-                {isGenerating ? 'Generating...' : 'Generate Resume'}
-              </button>
-            </div>
-          </div>
-
-          {generatedContent && (
-            <div className="generated-section">
-              <div className="generated-header">
-                <h2>Generated Resume</h2>
+        <main className="center-panel" data-phase={currentArtifact ? 'review' : 'input'}>
+          {!currentArtifact ? (
+            // INPUT PHASE: Large textarea, focused input mode
+            <div className="generator-section">
+              <h2>Generate Tailored Resume</h2>
+              <div className="generator-form">
+                <label>Job Description</label>
+                <textarea
+                  value={jobDescription}
+                  onChange={(e) => setJobDescription(e.target.value)}
+                  placeholder="Paste the job description here..."
+                  rows={12}
+                  disabled={isGenerating}
+                />
                 <button
-                  onClick={() => {
-                    setCurrentArtifact(null);
-                    setGeneratedContent(null);
-                    setGeneratedHtml(null);
-                    setJobDescription('');
-                    setExportStatus(null);
-                  }}
-                  className="btn-small-danger"
-                  title="Clear generated resume and job description"
+                  onClick={handleGenerate}
+                  disabled={isGenerating || documents.length === 0}
+                  className="btn-primary btn-large"
                 >
-                  Clear
+                  {isGenerating ? 'Generating...' : 'Generate Resume'}
                 </button>
               </div>
-              <div className="generated-content">
-                {generatedContent.split('\n').map((line, i) => (
-                  <p key={i}>{line || <br />}</p>
-                ))}
+            </div>
+          ) : (
+            // REVIEW PHASE: Two-pane layout (resume preview + quality report) + sticky footer
+            <>
+              {/* Resume Preview Pane */}
+              <div className="review-pane review-pane-top">
+                <div className="pane-header">
+                  <h3>Resume Preview</h3>
+                  <button
+                    onClick={() => {
+                      setCurrentArtifact(null);
+                      setGeneratedContent(null);
+                      setGeneratedHtml(null);
+                      setJobDescription('');
+                      setExportStatus(null);
+                    }}
+                    className="btn-small-primary"
+                    title="Back to edit job description"
+                  >
+                    ← Back to Edit
+                  </button>
+                </div>
+                <div className="resume-content">
+                  {generatedContent && (
+                    generatedContent.split('\n').map((line, i) => (
+                      <p key={i}>{line || <br />}</p>
+                    ))
+                  )}
+                </div>
               </div>
 
-              {renderQualityReport()}
+              {/* Quality Report Pane */}
+              <div className="review-pane review-pane-bottom">
+                {renderQualityReport()}
+              </div>
 
-              <div className="button-group">
+              {/* Sticky Footer with Export Buttons */}
+              <div className="review-footer">
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(generatedContent);
-                    alert('Copied to clipboard!');
+                    if (generatedContent) {
+                      navigator.clipboard.writeText(generatedContent);
+                      alert('Copied to clipboard!');
+                    }
                   }}
                   className="btn-secondary"
                 >
@@ -701,22 +714,22 @@ export const App: React.FC = () => {
                 </button>
                 <button
                   onClick={handleDownloadPDF}
-                  disabled={isExporting || (!currentArtifact && (documents.length === 0 || !jobDescription.trim()))}
+                  disabled={isExporting}
                   className="btn-primary"
-                  title={currentArtifact ? 'Open resume in new tab to print/save as PDF' : documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Open resume in new tab to print/save as PDF'}
+                  title="Open resume in new tab to print/save as PDF"
                 >
-                  {exportStatus || (isExporting ? 'Exporting...' : 'Export as PDF')}
+                  {isExporting && exportStatus === 'Exporting to PDF…' ? 'Exporting PDF...' : 'Export as PDF'}
                 </button>
                 <button
                   onClick={handleDownloadDOCX}
-                  disabled={isExporting || (!currentArtifact && (documents.length === 0 || !jobDescription.trim()))}
+                  disabled={isExporting}
                   className="btn-primary"
-                  title={currentArtifact ? 'Download resume as DOCX for editing' : documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Download resume as DOCX for editing'}
+                  title="Download resume as DOCX for editing"
                 >
                   {isExporting && exportStatus === 'Exporting to DOCX…' ? 'Exporting DOCX...' : 'Export as DOCX'}
                 </button>
               </div>
-            </div>
+            </>
           )}
         </main>
 
