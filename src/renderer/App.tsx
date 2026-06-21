@@ -49,6 +49,7 @@ export const App: React.FC = () => {
   const [savedResumes, setSavedResumes] = useState<SavedResume[]>([]);
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
   const [savedError, setSavedError] = useState<string | null>(null);
+  const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadSessions();
@@ -96,6 +97,18 @@ export const App: React.FC = () => {
       setSavedError(err instanceof Error ? err.message : 'Failed to load saved résumés');
     } finally {
       setIsLoadingSaved(false);
+    }
+  };
+
+  const dismissWarning = (warningText: string) => {
+    setDismissedWarnings(prev => new Set([...prev, warningText]));
+  };
+
+  const acceptAllWarnings = () => {
+    if (currentArtifact?.qualityReport?.ats.warnings) {
+      const allWarnings = new Set(dismissedWarnings);
+      currentArtifact.qualityReport.ats.warnings.forEach(w => allWarnings.add(w));
+      setDismissedWarnings(allWarnings);
     }
   };
 
@@ -480,18 +493,39 @@ export const App: React.FC = () => {
         <div className="quality-section">
           <h4>ATS Formatting</h4>
           <p className="quality-status">{getStatusDisplay(report.ats.status)}</p>
-          {report.ats.warnings.length > 0 ? (
-            <div className="quality-list quality-warning">
-              {report.ats.warnings.slice(0, 2).map((w, i) => (
-                <p key={i} className="quality-item">• {w}</p>
-              ))}
-              {report.ats.warnings.length > 2 && (
-                <p className="quality-item-more">+{report.ats.warnings.length - 2} more</p>
-              )}
-            </div>
-          ) : (
-            <p className="quality-item quality-ok">Likely ATS-safe</p>
-          )}
+          {(() => {
+            const activeWarnings = report.ats.warnings.filter(w => !dismissedWarnings.has(w));
+            return activeWarnings.length > 0 ? (
+              <div className="quality-list quality-warning">
+                {activeWarnings.slice(0, 2).map((w, i) => (
+                  <div key={i} className="quality-item-row">
+                    <p className="quality-item">• {w}</p>
+                    <button
+                      className="dismiss-btn"
+                      title="Dismiss this warning"
+                      onClick={() => dismissWarning(w)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {activeWarnings.length > 2 && (
+                  <div className="quality-item-row">
+                    <p className="quality-item-more">+{activeWarnings.length - 2} more</p>
+                    <button
+                      className="dismiss-btn"
+                      title="Dismiss all warnings"
+                      onClick={acceptAllWarnings}
+                    >
+                      Dismiss all
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="quality-item quality-ok">Likely ATS-safe</p>
+            );
+          })()}
         </div>
 
         <div className="quality-section">
@@ -1275,6 +1309,40 @@ export const App: React.FC = () => {
           font-size: 11px;
           color: var(--text-secondary);
           font-style: italic;
+        }
+
+        .quality-item-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 8px;
+          margin: 4px 0;
+        }
+
+        .quality-item-row .quality-item {
+          flex: 1;
+          margin: 0;
+        }
+
+        .quality-item-row .quality-item-more {
+          flex: 1;
+          margin: 0;
+        }
+
+        .dismiss-btn {
+          background: transparent;
+          border: none;
+          color: var(--text-secondary);
+          cursor: pointer;
+          font-size: 14px;
+          padding: 2px 4px;
+          line-height: 1;
+          transition: color 0.2s;
+          flex-shrink: 0;
+        }
+
+        .dismiss-btn:hover {
+          color: var(--text-primary);
         }
 
         .quality-warning-export {

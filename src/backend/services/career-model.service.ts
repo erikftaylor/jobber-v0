@@ -545,13 +545,13 @@ export class CareerModelService {
       for (const line of lines) {
         const trimmed = line.trim();
 
-        if (trimmed.match(/^SKILLS|^CORE EXPERTISE|^COMPETENCIES/i)) {
+        if (trimmed.match(/^(SKILLS|CORE EXPERTISE|EXPERTISE|COMPETENCIES|TECHNICAL SKILLS)/i)) {
           inSkillsSection = true;
           continue;
         }
 
         if (inSkillsSection) {
-          if (trimmed.match(/^(EXPERIENCE|EDUCATION|PROJECTS|CERTIFICATION)/i)) {
+          if (trimmed.match(/^(PROFESSIONAL|EXPERIENCE|EDUCATION|PROJECTS|CERTIFICATIONS|SUMMARY|WORK HISTORY)/i)) {
             inSkillsSection = false;
             break;
           }

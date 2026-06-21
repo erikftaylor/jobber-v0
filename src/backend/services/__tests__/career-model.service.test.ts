@@ -114,6 +114,46 @@ describe('CareerModelService', () => {
       expect(skillNames.some(n => n.includes('JavaScript') || n.includes('TypeScript'))).toBe(true);
     });
 
+    it('should extract skills from CORE EXPERTISE section', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'CORE EXPERTISE\nJavaScript, React, Node.js, AWS, Docker\n\nPROFESSIONAL EXPERIENCE'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.skills.length).toBeGreaterThan(0);
+      const skillNames = model.model_json.skills.map(s => s.name);
+      expect(skillNames.some(n => n.toLowerCase().includes('javascript'))).toBe(true);
+      expect(skillNames.some(n => n.toLowerCase().includes('react'))).toBe(true);
+    });
+
+    it('should extract skills from EXPERTISE section', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'EXPERTISE\nPython, Machine Learning, TensorFlow, Data Analysis\n\nEDUCATION'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.skills.length).toBeGreaterThan(0);
+      const skillNames = model.model_json.skills.map(s => s.name);
+      expect(skillNames.some(n => n.toLowerCase().includes('python'))).toBe(true);
+    });
+
+    it('should extract skills from COMPETENCIES section', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'COMPETENCIES\nJava, Spring Boot, Kubernetes, Microservices\n\nPROJECTS'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.skills.length).toBeGreaterThan(0);
+      const skillNames = model.model_json.skills.map(s => s.name);
+      expect(skillNames.some(n => n.toLowerCase().includes('java'))).toBe(true);
+    });
+
     it('should detect tools from known tool list', () => {
       const doc = createMockDocument(
         'doc-1',
