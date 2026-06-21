@@ -77,9 +77,25 @@ CREATE TABLE IF NOT EXISTS generated_resumes (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Career Knowledge Layer: structured, persistent knowledge extracted from source documents
+-- One career model per session. When new documents are uploaded, a new career model is
+-- extracted and synthesized from the documents, creating a new version.
+CREATE TABLE IF NOT EXISTS career_models (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  source_document_ids JSON NOT NULL,     -- string[] of document IDs that were used to build this model
+  source_hash TEXT NOT NULL,              -- hash of concatenated source documents (for change detection)
+  model_json JSON NOT NULL,               -- structured career knowledge: contact, roles, projects, skills, tools, metrics, education, certifications, approvedClaims
+  model_version TEXT NOT NULL,            -- semantic version of the model schema (e.g., "1.0.0")
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(type);
 CREATE INDEX IF NOT EXISTS idx_documents_uploaded_at ON documents(uploaded_at);
 CREATE INDEX IF NOT EXISTS idx_generated_materials_job_id ON generated_materials(job_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_job_id ON conversations(job_id);
 CREATE INDEX IF NOT EXISTS idx_generated_resumes_created_at ON generated_resumes(created_at);
+CREATE INDEX IF NOT EXISTS idx_career_models_session_id ON career_models(session_id);
+CREATE INDEX IF NOT EXISTS idx_career_models_created_at ON career_models(created_at);

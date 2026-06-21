@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
-import type { Document } from '../../shared/types';
+import type { Document, CareerModel } from '../../shared/types';
 
 export class DatabaseService {
   private db: Database.Database;
@@ -180,6 +180,115 @@ export class DatabaseService {
 
   clearSession(): void {
     this.db.prepare('DELETE FROM documents WHERE session_id = ?').run(this.activeSessionId);
+  }
+
+  // Career Models
+  createCareerModel(input: {
+    source_document_ids: string[];
+    source_hash: string;
+    model_json: CareerModel['model_json'];
+    model_version: string;
+  }): CareerModel {
+    const id = 'cm-' + uuid().replace(/-/g, '').substring(0, 16);
+    const now = new Date();
+
+    const stmt = this.db.prepare(`
+      INSERT INTO career_models (id, session_id, source_document_ids, source_hash, model_json, model_version, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      this.activeSessionId,
+      JSON.stringify(input.source_document_ids),
+      input.source_hash,
+      JSON.stringify(input.model_json),
+      input.model_version,
+      now.toISOString()
+    );
+
+    return {
+      id,
+      session_id: this.activeSessionId,
+      source_document_ids: input.source_document_ids,
+      source_hash: input.source_hash,
+      model_json: input.model_json,
+      model_version: input.model_version,
+      created_at: now,
+    };
+  }
+
+  getLatestCareerModel(): CareerModel | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM career_models
+      WHERE session_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+
+    const row = stmt.get(this.activeSessionId) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      session_id: row.session_id,
+      source_document_ids: JSON.parse(row.source_document_ids),
+      source_hash: row.source_hash,
+      model_json: JSON.parse(row.model_json),
+      model_version: row.model_version,
+      created_at: new Date(row.created_at),
+    };
+  }
+
+  listCareerModels(): CareerModel[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM career_models
+      WHERE session_id = ?
+      ORDER BY created_at DESC
+    `);
+
+    const rows = stmt.all(this.activeSessionId) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      session_id: row.session_id,
+      source_document_ids: JSON.parse(row.source_document_ids),
+      source_hash: row.source_hash,
+      model_json: JSON.parse(row.model_json),
+      model_version: row.model_version,
+      created_at: new Date(row.created_at),
+    }));
+  }
+
+  getCareerModel(id: string): CareerModel | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM career_models
+      WHERE id = ? AND session_id = ?
+    `);
+
+    const row = stmt.get(id, this.activeSessionId) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      session_id: row.session_id,
+      source_document_ids: JSON.parse(row.source_document_ids),
+      source_hash: row.source_hash,
+      model_json: JSON.parse(row.model_json),
+      model_version: row.model_version,
+      created_at: new Date(row.created_at),
+    };
+  }
+
+  deleteCareerModel(id: string): void {
+    const stmt = this.db.prepare(`
+      DELETE FROM career_models
+      WHERE id = ? AND session_id = ?
+    `);
+
+    stmt.run(id, this.activeSessionId);
   }
 
   /** Expose the underlying connection so repositories can own their own SQL. */
