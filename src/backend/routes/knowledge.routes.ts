@@ -4,6 +4,7 @@ import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { DatabaseService } from '../services/database.service';
 import { DocumentParserService } from '../services/document-parser.service';
+import { CareerModelService } from '../services/career-model.service';
 import { pdfGenerator } from '../services/pdf-generator.service';
 import { GenerateResumeUseCase } from '../use-cases/generate-resume.usecase';
 import type { GeneratedMaterialRepository } from '../repositories/generated-material.repository';
@@ -27,6 +28,7 @@ const upload = multer({
 interface KnowledgeRouterDeps {
   db: DatabaseService;
   parser: DocumentParserService;
+  careerModelService?: CareerModelService;
   extractor?: any; // Claude carrier: { claude } — generation calls extractor.claude.call(...)
   materialRepository?: GeneratedMaterialRepository; // persists successful generations
 }
@@ -36,6 +38,7 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
   // never stacks duplicate route registrations on a shared instance.
   const router = Router();
   const { db, parser } = deps;
+  const careerModelService = deps.careerModelService || new CareerModelService();
   const generateResumeUseCase = new GenerateResumeUseCase({
     db,
     extractor: deps.extractor,
@@ -377,6 +380,95 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
       res.status(statusCode).json(body);
     } catch (error) {
       next(error);
+    }
+  });
+
+  // Career Model Routes
+  // GET /api/kb/career-model - Get current career model and stale status
+  router.get('/career-model', (req: Request, res: Response) => {
+    try {
+      const documents = db.getAllDocuments();
+      const sourceHash = careerModelService.hashSources(documents);
+      const latestModel = db.getLatestCareerModel();
+
+      // Determine if stale
+      let stale = false;
+      if (documents.length > 0 && !latestModel) {
+        // Documents exist but no model
+        stale = true;
+      } else if (latestModel && latestModel.source_hash !== sourceHash) {
+        // Model exists but hash doesn't match
+        stale = true;
+      }
+      // If no documents, stale = false (nothing to build)
+
+      res.json({
+        success: true,
+        careerModel: latestModel || null,
+        stale,
+        sourceDocumentCount: documents.length,
+        sourceHash: documents.length > 0 ? sourceHash : null,
+      });
+    } catch (error) {
+      console.error('Get career model error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to get career model',
+      });
+    }
+  });
+
+  // POST /api/kb/career-model/rebuild - Extract and persist a new career model
+  router.post('/career-model/rebuild', (req: Request, res: Response) => {
+    try {
+      const documents = db.getAllDocuments();
+
+      if (documents.length === 0) {
+        res.status(400).json({
+          error: 'No documents uploaded. Upload at least one document before building a career model.',
+        });
+        return;
+      }
+
+      const activeSessionId = db.getActiveSession();
+      const careerModel = careerModelService.buildFromDocuments(activeSessionId, documents);
+
+      // Persist the model
+      const persistedModel = db.createCareerModel({
+        source_document_ids: careerModel.source_document_ids,
+        source_hash: careerModel.source_hash,
+        model_json: careerModel.model_json,
+        model_version: careerModel.model_version,
+      });
+
+      res.json({
+        success: true,
+        careerModel: persistedModel,
+        sourceDocumentCount: documents.length,
+        rebuilt: true,
+      });
+    } catch (error) {
+      console.error('Rebuild career model error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to rebuild career model',
+      });
+    }
+  });
+
+  // GET /api/kb/career-models - List career model versions (newest first)
+  router.get('/career-models', (req: Request, res: Response) => {
+    try {
+      const models = db.listCareerModels();
+
+      res.json({
+        success: true,
+        careerModels: models,
+        count: models.length,
+      });
+    } catch (error) {
+      console.error('List career models error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to list career models',
+      });
     }
   });
 
