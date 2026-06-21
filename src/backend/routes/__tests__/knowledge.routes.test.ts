@@ -199,8 +199,8 @@ describe('Knowledge Routes', () => {
 
     const res = await request(app).post('/api/kb/docx').send({ resumeId: 'empty-resume-id' });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain('empty');
+    expect(res.status).toBe(422);
+    expect(res.body.error).toContain('valid content');
   });
 
   it('POST /api/kb/docx returns DOCX buffer with correct headers on success', async () => {
