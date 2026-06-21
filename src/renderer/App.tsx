@@ -34,6 +34,12 @@ const EXPORT_STATUS = {
   DOCX: 'Exporting to DOCX…',
 };
 
+const QUALITY_STATUS_CONFIG = {
+  pass: { icon: '✓', label: 'Ready to Export', className: 'quality-pass' },
+  warn: { icon: '⚠', label: 'Review Issues', className: 'quality-warn' },
+  fail: { icon: '✗', label: 'Fix Required', className: 'quality-fail' }
+};
+
 export const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -452,12 +458,7 @@ export const App: React.FC = () => {
 
     // Get status display with P2 styling
     const getStatusDisplay = (status: string) => {
-      const config = {
-        pass: { icon: '✓', label: 'Ready to Export', className: 'quality-pass' },
-        warn: { icon: '⚠', label: 'Review Issues', className: 'quality-warn' },
-        fail: { icon: '✗', label: 'Fix Required', className: 'quality-fail' }
-      };
-      return config[status as keyof typeof config] || config.pass;
+      return QUALITY_STATUS_CONFIG[status as keyof typeof QUALITY_STATUS_CONFIG] || QUALITY_STATUS_CONFIG.pass;
     };
 
     const statusDisplay = getStatusDisplay(report.overallStatus);
@@ -498,7 +499,7 @@ export const App: React.FC = () => {
             <div className="quality-subsection">
               <p className="quality-subsection-label">✓ Supported claims ({report.truthfulness.supportedClaims.length})</p>
               {report.truthfulness.supportedClaims.slice(0, 2).map((claim, i) => (
-                <p key={i} className="quality-subsection-item">{claim.substring(0, 60)}...</p>
+                <p key={`claim-${i}-${claim.substring(0, 30)}`} className="quality-subsection-item">{claim.substring(0, 60)}...</p>
               ))}
               {report.truthfulness.supportedClaims.length > 2 && (
                 <p className="quality-subsection-more">+{report.truthfulness.supportedClaims.length - 2} more</p>
@@ -509,7 +510,7 @@ export const App: React.FC = () => {
             <div className="quality-subsection quality-subsection-warning">
               <p className="quality-subsection-label">⚠ Potential unsupported claims ({report.truthfulness.unsupportedClaims.length})</p>
               {report.truthfulness.unsupportedClaims.slice(0, 1).map((claim, i) => (
-                <p key={i} className="quality-subsection-item">{claim.substring(0, 60)}...</p>
+                <p key={`claim-${i}-${claim.substring(0, 30)}`} className="quality-subsection-item">{claim.substring(0, 60)}...</p>
               ))}
             </div>
           )}
@@ -524,7 +525,7 @@ export const App: React.FC = () => {
           {report.ats.warnings.length > 0 && (
             <div className="quality-subsection quality-subsection-warning">
               {report.ats.warnings.filter(w => !dismissedWarnings.has(w)).map((warning, i) => (
-                <div key={i} className="quality-warning-item">
+                <div key={`warning-${i}-${warning.substring(0, 30)}`} className="quality-warning-item">
                   <p className="quality-warning-text">{warning}</p>
                 </div>
               ))}
@@ -542,7 +543,7 @@ export const App: React.FC = () => {
             <div className="quality-subsection quality-subsection-warning">
               <p className="quality-subsection-label">Missing keywords ({report.keywords.missing.length})</p>
               {report.keywords.missing.slice(0, 3).map((keyword, i) => (
-                <p key={i} className="quality-subsection-item">{keyword}</p>
+                <p key={`keyword-${i}-${keyword.substring(0, 30)}`} className="quality-subsection-item">{keyword}</p>
               ))}
               {report.keywords.missing.length > 3 && (
                 <p className="quality-subsection-more">+{report.keywords.missing.length - 3} more</p>
@@ -561,7 +562,7 @@ export const App: React.FC = () => {
             {report.length.warnings.length > 0 && (
               <div className="quality-subsection">
                 {report.length.warnings.map((warning, i) => (
-                  <p key={i} className="quality-subsection-item">{warning}</p>
+                  <p key={`length-${i}-${warning.substring(0, 30)}`} className="quality-subsection-item">{warning}</p>
                 ))}
               </div>
             )}
