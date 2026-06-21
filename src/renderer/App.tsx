@@ -1547,6 +1547,188 @@ export const App: React.FC = () => {
             width: 100%;
           }
         }
+
+        /* P2: Quality Report Redesign */
+        .quality-report-panel {
+          background: var(--bg-secondary);
+          border: none;
+          border-radius: 0;
+          padding: 0;
+          margin: 0;
+        }
+
+        /* P2 Header with Title and Status Badge */
+        .quality-header-p2 {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .quality-header-p2 h3 {
+          margin: 0;
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        /* P2 Prominent Status Badge */
+        .quality-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border-radius: 3px;
+          font-size: 13px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .quality-badge-icon {
+          font-size: 14px;
+        }
+
+        .quality-badge-label {
+          letter-spacing: 0.3px;
+        }
+
+        .quality-badge-quality-pass {
+          background: #e6ffe6;
+          color: #1a5c1a;
+        }
+
+        .quality-badge-quality-warn {
+          background: #fff4e6;
+          color: #cc6633;
+        }
+
+        .quality-badge-quality-fail {
+          background: #ffe6e6;
+          color: #8c1a1a;
+        }
+
+        /* P2 Summary Line */
+        .quality-summary-line {
+          background: rgba(204, 102, 51, 0.05);
+          border-left: 3px solid #cc6633;
+          padding: 8px 10px;
+          margin-bottom: 12px;
+          border-radius: 2px;
+        }
+
+        .quality-summary-line p {
+          margin: 0;
+          font-size: 12px;
+          color: #666;
+          font-weight: 500;
+          line-height: 1.4;
+        }
+
+        /* Quality Section with Better Hierarchy */
+        .quality-section {
+          margin-bottom: 12px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .quality-section:last-child {
+          border-bottom: none;
+          margin-bottom: 0;
+          padding-bottom: 0;
+        }
+
+        .quality-section h4 {
+          margin: 0 0 6px 0;
+          font-size: 12px;
+          font-weight: 700;
+          color: var(--text-primary);
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+
+        /* Quality Item (Status Line) */
+        .quality-item {
+          margin: 0 0 6px 0;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.4;
+        }
+
+        .quality-item.quality-pass {
+          color: #1a5c1a;
+        }
+
+        .quality-item.quality-warn {
+          color: #cc6633;
+        }
+
+        .quality-item.quality-fail {
+          color: #8c1a1a;
+        }
+
+        /* Subsection for Details */
+        .quality-subsection {
+          margin: 6px 0;
+          padding: 0;
+          font-size: 11px;
+        }
+
+        .quality-subsection-label {
+          margin: 0 0 4px 0;
+          font-size: 11px;
+          font-weight: 600;
+          color: #666;
+        }
+
+        .quality-subsection-item {
+          margin: 2px 0 2px 12px;
+          font-size: 11px;
+          color: #999;
+          line-height: 1.3;
+        }
+
+        .quality-subsection-more {
+          margin: 2px 0 0 12px;
+          font-size: 10px;
+          color: #999;
+          font-style: italic;
+        }
+
+        .quality-subsection-warning {
+          background: rgba(204, 102, 51, 0.05);
+          padding: 4px 8px;
+          border-left: 3px solid #cc6633;
+          border-radius: 2px;
+          margin: 6px 0 0 0;
+        }
+
+        .quality-subsection-warning .quality-subsection-label {
+          color: #cc6633;
+          font-weight: 700;
+        }
+
+        /* Warning Item in ATS Section */
+        .quality-warning-item {
+          background: rgba(204, 102, 51, 0.03);
+          padding: 4px 8px;
+          margin: 4px 0;
+          border-radius: 2px;
+          border-left: 2px solid #cc6633;
+        }
+
+        .quality-warning-text {
+          margin: 0;
+          font-size: 11px;
+          color: #666;
+          line-height: 1.4;
+        }
+
+        /* Hide/Restyle Dismiss Buttons */
+        .dismiss-btn {
+          display: none;
+        }
       `}</style>
     </div>
   );
