@@ -1387,6 +1387,166 @@ export const App: React.FC = () => {
           font-style: italic;
           margin: 0;
         }
+
+        /* P1: Two-Pane Layout - Center Panel */
+        .center-panel[data-phase="review"] {
+          display: grid;
+          grid-template-rows: 1fr 1fr auto;
+          grid-template-columns: 1fr;
+          height: 100%;
+          overflow: hidden;
+        }
+
+        .center-panel[data-phase="input"] {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          overflow-y: auto;
+        }
+
+        /* Resume Preview Pane (Top) */
+        .review-pane {
+          display: flex;
+          flex-direction: column;
+          overflow-y: auto;
+          padding: 0;
+          min-height: 0;
+        }
+
+        .review-pane-top {
+          border-bottom: 1px solid var(--border-color);
+          background: var(--bg-primary);
+        }
+
+        .review-pane-top .pane-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--border-color);
+          flex-shrink: 0;
+          background: var(--bg-primary);
+        }
+
+        .review-pane-top .pane-header h3 {
+          margin: 0;
+          font-size: 14px;
+          font-weight: 600;
+        }
+
+        .review-pane-top .btn-small-primary {
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: 500;
+          background: var(--accent);
+          color: white;
+          border: none;
+          border-radius: 3px;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+
+        .review-pane-top .btn-small-primary:hover {
+          opacity: 0.9;
+        }
+
+        .resume-content {
+          flex: 1;
+          padding: 20px;
+          overflow-y: auto;
+          background: var(--bg-primary);
+          font-family: 'Courier New', monospace;
+          font-size: 11px;
+          line-height: 1.4;
+          color: var(--text-primary);
+        }
+
+        .resume-content p {
+          margin: 0;
+          word-wrap: break-word;
+        }
+
+        /* Quality Report Pane (Bottom) */
+        .review-pane-bottom {
+          background: var(--bg-secondary);
+          border-top: 1px solid var(--border-color);
+          padding: 16px 20px;
+          overflow-y: auto;
+        }
+
+        /* Sticky Footer with Export Buttons */
+        .review-footer {
+          background: var(--bg-secondary);
+          border-top: 2px solid var(--border-color);
+          padding: 12px 20px;
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          flex-shrink: 0;
+        }
+
+        .review-footer .btn-secondary,
+        .review-footer .btn-primary {
+          padding: 8px 14px;
+          font-size: 12px;
+          font-weight: 500;
+          border-radius: 3px;
+          cursor: pointer;
+          transition: opacity 0.2s;
+          white-space: nowrap;
+        }
+
+        .review-footer .btn-secondary {
+          background: white;
+          border: 1px solid var(--border-color);
+          color: var(--text-primary);
+        }
+
+        .review-footer .btn-secondary:hover:not(:disabled) {
+          background: var(--bg-primary);
+        }
+
+        .review-footer .btn-primary {
+          background: var(--accent);
+          color: white;
+          border: none;
+        }
+
+        .review-footer .btn-primary:hover:not(:disabled) {
+          opacity: 0.9;
+        }
+
+        .review-footer .btn-primary:disabled,
+        .review-footer .btn-secondary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* Mobile Responsive: Stack vertically on small screens */
+        @media (max-width: 600px) {
+          .center-panel[data-phase="review"] {
+            grid-template-rows: auto auto auto;
+          }
+
+          .review-pane-top {
+            max-height: 40vh;
+          }
+
+          .review-pane-bottom {
+            max-height: 40vh;
+          }
+
+          .review-footer {
+            flex-direction: column;
+            justify-content: stretch;
+          }
+
+          .review-footer .btn-secondary,
+          .review-footer .btn-primary {
+            width: 100%;
+          }
+        }
       `}</style>
     </div>
   );
