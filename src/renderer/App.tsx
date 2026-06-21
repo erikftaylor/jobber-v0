@@ -29,6 +29,11 @@ interface ResumeArtifact {
   qualityReport?: ResumeQualityReport; // Quality assessment of the generated resume
 }
 
+const EXPORT_STATUS = {
+  PDF: 'Exporting to PDF…',
+  DOCX: 'Exporting to DOCX…',
+};
+
 export const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -322,7 +327,7 @@ export const App: React.FC = () => {
       }
 
       // Call the PDF export endpoint
-      setExportStatus('Exporting to PDF…');
+      setExportStatus(EXPORT_STATUS.PDF);
       const response = await fetch('/api/kb/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -380,7 +385,7 @@ export const App: React.FC = () => {
       }
 
       // Call the DOCX export endpoint
-      setExportStatus('Exporting to DOCX…');
+      setExportStatus(EXPORT_STATUS.DOCX);
       const response = await fetch('/api/kb/docx', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -678,6 +683,7 @@ export const App: React.FC = () => {
                       setGeneratedHtml(null);
                       setJobDescription('');
                       setExportStatus(null);
+                      setDismissedWarnings(new Set());
                     }}
                     className="btn-small-primary"
                     title="Back to edit job description"
@@ -688,7 +694,7 @@ export const App: React.FC = () => {
                 <div className="resume-content">
                   {generatedContent && (
                     generatedContent.split('\n').map((line, i) => (
-                      <p key={i}>{line || <br />}</p>
+                      <p key={`line-${i}-${line.substring(0, 20)}`}>{line || <br />}</p>
                     ))
                   )}
                 </div>
@@ -718,7 +724,7 @@ export const App: React.FC = () => {
                   className="btn-primary"
                   title="Open resume in new tab to print/save as PDF"
                 >
-                  {isExporting && exportStatus === 'Exporting to PDF…' ? 'Exporting PDF...' : 'Export as PDF'}
+                  {isExporting && exportStatus === EXPORT_STATUS.PDF ? 'Exporting PDF...' : 'Export as PDF'}
                 </button>
                 <button
                   onClick={handleDownloadDOCX}
@@ -726,7 +732,7 @@ export const App: React.FC = () => {
                   className="btn-primary"
                   title="Download resume as DOCX for editing"
                 >
-                  {isExporting && exportStatus === 'Exporting to DOCX…' ? 'Exporting DOCX...' : 'Export as DOCX'}
+                  {isExporting && exportStatus === EXPORT_STATUS.DOCX ? 'Exporting DOCX...' : 'Export as DOCX'}
                 </button>
               </div>
             </>
