@@ -200,6 +200,170 @@ Senior engineer with 10 years experience.
       expect(report.ats.warnings.some(w => w.includes('Missing required section'))).toBe(true);
     });
 
+    it('recognizes CORE EXPERTISE as valid SKILLS section', () => {
+      const generatedContent = `
+John Doe
+
+SUMMARY
+Senior engineer with 10 years experience.
+
+CORE EXPERTISE
+JavaScript
+React
+Docker
+
+PROFESSIONAL EXPERIENCE
+Senior Engineer | TechCorp | 2020 – 2023
+• Led team of 5
+
+EDUCATION
+B.S. Computer Science • Stanford
+`;
+
+      const report = resumeQualityReportService.buildReport({
+        generatedContent,
+        careerModel: createMockCareerModel(),
+        jobDescription: 'Senior engineer',
+      });
+
+      expect(report.ats.warnings.filter(w => w.includes('SKILLS'))).toHaveLength(0);
+    });
+
+    it('recognizes EXPERTISE as valid SKILLS section', () => {
+      const generatedContent = `
+John Doe
+
+SUMMARY
+Senior engineer.
+
+EXPERTISE
+Python, JavaScript, AWS
+
+PROFESSIONAL EXPERIENCE
+Senior Engineer | TechCorp | 2020 – 2023
+• Led team
+
+EDUCATION
+B.S. • Stanford
+`;
+
+      const report = resumeQualityReportService.buildReport({
+        generatedContent,
+        careerModel: createMockCareerModel(),
+        jobDescription: 'Senior engineer',
+      });
+
+      expect(report.ats.warnings.filter(w => w.includes('SKILLS'))).toHaveLength(0);
+    });
+
+    it('recognizes COMPETENCIES as valid SKILLS section', () => {
+      const generatedContent = `
+John Doe
+
+SUMMARY
+Senior engineer.
+
+COMPETENCIES
+Java, Spring Boot, Kubernetes
+
+PROFESSIONAL EXPERIENCE
+Senior Engineer | TechCorp | 2020 – 2023
+• Designed systems
+
+EDUCATION
+B.S. • Stanford
+`;
+
+      const report = resumeQualityReportService.buildReport({
+        generatedContent,
+        careerModel: createMockCareerModel(),
+        jobDescription: 'Senior engineer',
+      });
+
+      expect(report.ats.warnings.filter(w => w.includes('SKILLS'))).toHaveLength(0);
+    });
+
+    it('recognizes TECHNICAL SKILLS as valid SKILLS section', () => {
+      const generatedContent = `
+John Doe
+
+SUMMARY
+Senior engineer.
+
+TECHNICAL SKILLS
+C++, Rust, CUDA
+
+PROFESSIONAL EXPERIENCE
+Senior Engineer | TechCorp | 2020 – 2023
+• Optimized performance
+
+EDUCATION
+B.S. • Stanford
+`;
+
+      const report = resumeQualityReportService.buildReport({
+        generatedContent,
+        careerModel: createMockCareerModel(),
+        jobDescription: 'Senior engineer',
+      });
+
+      expect(report.ats.warnings.filter(w => w.includes('SKILLS'))).toHaveLength(0);
+    });
+
+    it('recognizes PROFESSIONAL EXPERIENCE as valid EXPERIENCE section', () => {
+      const generatedContent = `
+John Doe
+
+SUMMARY
+Senior engineer.
+
+PROFESSIONAL EXPERIENCE
+Senior Engineer | TechCorp | 2020 – 2023
+• Led team
+
+CORE EXPERTISE
+JavaScript
+
+EDUCATION
+B.S. • Stanford
+`;
+
+      const report = resumeQualityReportService.buildReport({
+        generatedContent,
+        careerModel: createMockCareerModel(),
+        jobDescription: 'Senior engineer',
+      });
+
+      expect(report.ats.warnings.filter(w => w.includes('EXPERIENCE'))).toHaveLength(0);
+    });
+
+    it('recognizes WORK HISTORY as valid EXPERIENCE section', () => {
+      const generatedContent = `
+John Doe
+
+SUMMARY
+Senior engineer.
+
+WORK HISTORY
+Senior Engineer | TechCorp | 2020 – 2023
+• Led team
+
+CORE EXPERTISE
+JavaScript
+
+EDUCATION
+B.S. • Stanford
+`;
+
+      const report = resumeQualityReportService.buildReport({
+        generatedContent,
+        careerModel: createMockCareerModel(),
+        jobDescription: 'Senior engineer',
+      });
+
+      expect(report.ats.warnings.filter(w => w.includes('EXPERIENCE'))).toHaveLength(0);
+    });
+
     it('warns when no bullet points detected', () => {
       const generatedContent = `John Doe
 Senior Engineer at TechCorp from 2020 to 2023.

@@ -288,12 +288,21 @@ export class ResumeQualityReportService {
 
   private evaluateAts(generatedContent: string): ResumeQualityReport['ats'] {
     const warnings: string[] = [];
+    const upperContent = generatedContent.toUpperCase();
 
-    // Check for required sections
-    const sections = ['SUMMARY', 'EXPERIENCE', 'EDUCATION', 'SKILLS'];
-    for (const section of sections) {
-      if (!generatedContent.toUpperCase().includes(section)) {
-        warnings.push(`Missing required section: ${section}`);
+    // Check for required sections (with alternatives for skills)
+    const requiredSections = [
+      { name: 'SUMMARY', alternatives: ['OBJECTIVE', 'PROFESSIONAL SUMMARY'] },
+      { name: 'EXPERIENCE', alternatives: ['PROFESSIONAL EXPERIENCE', 'WORK HISTORY'] },
+      { name: 'EDUCATION', alternatives: [] },
+      { name: 'SKILLS', alternatives: ['CORE EXPERTISE', 'EXPERTISE', 'COMPETENCIES', 'TECHNICAL SKILLS'] },
+    ];
+
+    for (const section of requiredSections) {
+      const found = upperContent.includes(section.name) ||
+                    section.alternatives.some(alt => upperContent.includes(alt));
+      if (!found) {
+        warnings.push(`Missing required section: ${section.name}`);
       }
     }
 
