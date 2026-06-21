@@ -45,12 +45,13 @@ FORMATTING RULES:
 SECTION ORDER (EXACTLY):
 NAME
 SUMMARY
-CORE EXPERTISE
+SKILLS
 PROFESSIONAL EXPERIENCE
 EDUCATION
 
 STYLE GUIDE:
 Summary: Executive positioning statement, not a job objective.
+Expertise: List key technical and professional skills (normalize to "SKILLS" header for ATS optimization)
 Strong action verbs: Architected, Designed, Established, Embedded, Facilitated, Conducted, Transformed, Streamlined, Reduced, Created
 
 Format output exactly as:
@@ -60,7 +61,7 @@ Format output exactly as:
 SUMMARY
 [Executive positioning statement, max 65 words]
 
-CORE EXPERTISE
+SKILLS
 [Skill 1]
 [Skill 2]
 [Skill 3]
