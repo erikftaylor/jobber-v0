@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS generated_resumes (
   generated_content TEXT NOT NULL,       -- raw Claude resume text
   structured_resume_json JSON,           -- normalized StructuredResume; null on formatting fallback
   rendered_html TEXT,                    -- ATS HTML; null on formatting fallback
+  quality_report_json JSON,              -- truthfulness, ATS, keywords, length assessment
   formatting_error TEXT,                 -- set when the output engine fell back
   format_version TEXT,
   prompt_version TEXT,

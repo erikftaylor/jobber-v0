@@ -27,6 +27,7 @@ export interface CreateGeneratedMaterialInput {
   generatedContent: string;
   structuredResumeJson: unknown;
   renderedHtml: string | null;
+  qualityReportJson?: unknown;
   formattingError?: string;
   formatVersion?: string;
   promptVersion?: string;
@@ -43,6 +44,7 @@ export interface GeneratedMaterial {
   generatedContent: string;
   structuredResumeJson: unknown;
   renderedHtml: string | null;
+  qualityReportJson?: unknown;
   formattingError?: string;
   formatVersion?: string;
   promptVersion?: string;
@@ -62,9 +64,9 @@ export class GeneratedMaterialRepository {
       .prepare(
         `INSERT INTO generated_resumes (
           id, type, title, job_description_hash, source_document_ids, career_model_id,
-          generated_content, structured_resume_json, rendered_html,
+          generated_content, structured_resume_json, rendered_html, quality_report_json,
           formatting_error, format_version, prompt_version, model, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -76,6 +78,7 @@ export class GeneratedMaterialRepository {
         input.generatedContent,
         input.structuredResumeJson == null ? null : JSON.stringify(input.structuredResumeJson),
         input.renderedHtml,
+        input.qualityReportJson == null ? null : JSON.stringify(input.qualityReportJson),
         input.formattingError ?? null,
         input.formatVersion ?? null,
         input.promptVersion ?? null,
@@ -93,6 +96,7 @@ export class GeneratedMaterialRepository {
       generatedContent: input.generatedContent,
       structuredResumeJson: input.structuredResumeJson ?? null,
       renderedHtml: input.renderedHtml,
+      qualityReportJson: input.qualityReportJson,
       formattingError: input.formattingError,
       formatVersion: input.formatVersion,
       promptVersion: input.promptVersion,
@@ -126,6 +130,7 @@ export class GeneratedMaterialRepository {
       generatedContent: row.generated_content,
       structuredResumeJson: row.structured_resume_json ? JSON.parse(row.structured_resume_json) : null,
       renderedHtml: row.rendered_html ?? null,
+      qualityReportJson: row.quality_report_json ? JSON.parse(row.quality_report_json) : undefined,
       formattingError: row.formatting_error ?? undefined,
       formatVersion: row.format_version ?? undefined,
       promptVersion: row.prompt_version ?? undefined,

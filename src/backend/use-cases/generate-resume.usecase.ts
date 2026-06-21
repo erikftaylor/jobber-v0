@@ -20,6 +20,7 @@ import { resumeParser } from '../services/resume-parser.service';
 import { resumeOutputEngine } from '../services/resume-output-engine.service';
 import { resumePromptBuilderService } from '../services/resume-prompt-builder.service';
 import { CareerModelService } from '../services/career-model.service';
+import { resumeQualityReportService } from '../services/resume-quality-report.service';
 import type { DatabaseService } from '../services/database.service';
 import type { CreateGeneratedMaterialInput } from '../repositories/generated-material.repository';
 
@@ -126,6 +127,14 @@ export class GenerateResumeUseCase {
         `[Generate] Resume formatted: ${output.stats.experienceRoles} roles, ${output.stats.summaryWords} summary words, ${output.stats.estimatedPages} pages`
       );
 
+      // Build quality report
+      console.log('[Generate] Building quality report...');
+      const qualityReport = resumeQualityReportService.buildReport({
+        generatedContent: response.content,
+        careerModel,
+        jobDescription: job_description,
+      });
+
       const saved = this.persistArtifact({
         title: this.buildTitle(job_description),
         jobDescriptionHash: this.hashJobDescription(job_description),
@@ -134,6 +143,7 @@ export class GenerateResumeUseCase {
         generatedContent: response.content,
         structuredResumeJson: output.normalized,
         renderedHtml: output.html,
+        qualityReportJson: qualityReport,
       });
 
       return {
@@ -149,6 +159,7 @@ export class GenerateResumeUseCase {
             valid: output.validation.valid,
             warnings: output.validation.warnings,
           },
+          qualityReport,
           ...saved,
         },
       };
@@ -157,6 +168,13 @@ export class GenerateResumeUseCase {
       const errorStack = formatError instanceof Error ? formatError.stack : '';
       console.error('[Generate] Formatting error:', errorMsg);
       if (errorStack) console.error('[Generate] Stack:', errorStack);
+
+      // Build quality report even on format failure
+      const qualityReport = resumeQualityReportService.buildReport({
+        generatedContent: response.content,
+        careerModel,
+        jobDescription: job_description,
+      });
 
       // The text résumé generated successfully, so still persist the artifact.
       const saved = this.persistArtifact({
@@ -167,6 +185,7 @@ export class GenerateResumeUseCase {
         generatedContent: response.content,
         structuredResumeJson: null,
         renderedHtml: null,
+        qualityReportJson: qualityReport,
         formattingError: errorMsg,
       });
 
@@ -180,6 +199,7 @@ export class GenerateResumeUseCase {
           formatted_html: null,
           based_on_documents: documents.length,
           formatting_error: errorMsg,
+          qualityReport,
           ...saved,
         },
       };
