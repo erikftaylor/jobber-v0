@@ -103,6 +103,23 @@ export class GenerateResumeUseCase {
       careerModel = persistedModel;
     }
 
+    // Validate that professional experience was extracted
+    if (!careerModel.model_json.roles || careerModel.model_json.roles.length === 0) {
+      console.log('[Generate] Validation failed: No professional experience found in Career Knowledge Layer');
+      return {
+        statusCode: 422,
+        body: {
+          success: false,
+          error: 'Professional experience could not be extracted from the Career Knowledge Layer. Resume generation stopped to prevent an incomplete artifact.',
+          validation: {
+            hasRoles: false,
+            message: 'The uploaded documents contain no identifiable professional work history.',
+            suggestion: 'Please upload a resume with employment history (company name, job title, and dates).',
+          },
+        },
+      };
+    }
+
     const prompt = resumePromptBuilderService.buildResumePrompt({
       careerModel,
       jobDescription: job_description,

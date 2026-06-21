@@ -473,7 +473,7 @@ BFA Design • Some University • 2014`;
     cleanup();
     fs.mkdirSync(path.dirname(genDbPath), { recursive: true });
     genDb = new DatabaseService(genDbPath);
-    genDb.saveDocument('resume', 'cv.txt', 'Jane Doe — Senior Product Designer');
+    genDb.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nDesign Corp — Senior Product Designer\n2020 – Present\n• Led teams');
   });
 
   afterEach(cleanup);

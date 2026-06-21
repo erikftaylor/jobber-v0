@@ -368,4 +368,178 @@ describe('CareerModelService', () => {
       expect(skillNames.some(s => s.includes('react') || s.includes('node'))).toBe(true);
     });
   });
+
+  describe('Professional Experience Extraction Regression', () => {
+    it('should extract roles from em-dash format: Company — Title', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'PROFESSIONAL EXPERIENCE\n\nTovuti LMS — Senior Product Designer\n2025 – 2026\n• Built design system\n• Shipped features'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.roles.length).toBeGreaterThan(0);
+      const role = model.model_json.roles[0];
+      expect(role.company).toBe('Tovuti LMS');
+      expect(role.title).toBe('Senior Product Designer');
+      expect(role.startDate).toBe('2025');
+      expect(role.endDate).toBe('2026');
+      expect(role.achievements?.length).toBe(2);
+      expect(role.achievements?.[0]).toContain('design system');
+    });
+
+    it('should extract roles from em-dash format: Company — Title', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'PROFESSIONAL EXPERIENCE\n\nTransamerica — Senior UX Designer\nNov 2020 – Nov 2024\n• Led redesign\n• Improved adoption'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.roles.length).toBeGreaterThan(0);
+      const role = model.model_json.roles[0];
+      expect(role.company).toBe('Transamerica');
+      expect(role.title).toBe('Senior UX Designer');
+      expect(role.startDate).toBe('2020');
+      expect(role.endDate).toBe('2024');
+      expect(role.achievements?.length).toBeGreaterThan(0);
+    });
+
+    it('should extract roles from en-dash format: Company – Title', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'PROFESSIONAL EXPERIENCE\n\nIBM – Product Designer\n2017 – 2020\n• Designed interfaces\n• Led team'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.roles.length).toBeGreaterThan(0);
+      const role = model.model_json.roles[0];
+      expect(role.company).toBe('IBM');
+      expect(role.title).toBe('Product Designer');
+    });
+
+    it('should NOT extract dashes inside prose as role headers', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'SUMMARY\nDesigned end-to-end workflows — improving adoption and usability. ' +
+          'Research synthesis — reduced manual effort by 10–15 hours per week.\n\n' +
+          'PROFESSIONAL EXPERIENCE\n\nTech Corp — Senior Engineer\n2020 – 2023\n• Architected system'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      // Should extract only the real role
+      expect(model.model_json.roles.length).toBe(1);
+      const role = model.model_json.roles[0];
+      expect(role.company).toBe('Tech Corp');
+      expect(role.title).toBe('Senior Engineer');
+    });
+
+    it('should NOT extract date ranges as role headers', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'EXPERIENCE\n\nSenior Engineer | Tech Corp | 2020 – 2023\n' +
+          '• Project A ran 2022–2024\n' +
+          '• Initiative B spanned Q1 – Q4 2023\n' +
+          '• Task C: 3–5 hours per week'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      // Should extract only the one real role from pipe format
+      expect(model.model_json.roles.length).toBe(1);
+      const role = model.model_json.roles[0];
+      expect(role.title).toBe('Senior Engineer');
+    });
+
+    it('should preserve pipe-format backward compatibility', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'PROFESSIONAL EXPERIENCE\n\nSenior Engineer | Tech Corp | 2020 – 2023\n• Led team\n• Built API'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.roles.length).toBe(1);
+      const role = model.model_json.roles[0];
+      expect(role.title).toBe('Senior Engineer');
+      expect(role.company).toBe('Tech Corp');
+      expect(role.achievements?.length).toBe(2);
+    });
+
+    it('should extract multiple roles from mixed formats', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'PROFESSIONAL EXPERIENCE\n\n' +
+          'Acme Inc — VP Engineering\n2023 – Present\n• Led org\n\n' +
+          'Tech Corp | Senior Engineer | 2020 – 2023\n• Built APIs\n\n' +
+          'StartupXYZ – Principal Architect\n2018 – 2020\n• Designed platform'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.roles.length).toBe(3);
+      expect(model.model_json.roles[0].company).toBe('Acme Inc');
+      expect(model.model_json.roles[1].company).toBe('Tech Corp');
+      expect(model.model_json.roles[2].company).toBe('StartupXYZ');
+    });
+
+    it('should preserve location information in date line', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'PROFESSIONAL EXPERIENCE\n\nTech Corp — Senior Engineer\n2020 – 2023 • San Francisco, CA\n• Built systems'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.roles.length).toBe(1);
+      const role = model.model_json.roles[0];
+      expect(role.location).toBe('San Francisco, CA');
+    });
+
+    it('should handle roles with no achievements', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'PROFESSIONAL EXPERIENCE\n\nAcme Corp — Manager\n2020 – 2023\n\nEducation'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      expect(model.model_json.roles.length).toBe(1);
+      const role = model.model_json.roles[0];
+      expect(role.company).toBe('Acme Corp');
+      expect(role.title).toBe('Manager');
+      expect(role.achievements?.length).toBe(0);
+    });
+
+    it('should set high confidence for em-dash extracted roles', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'PROFESSIONAL EXPERIENCE\n\nTech Corp — Senior Engineer\n2020 – 2023\n• Led team'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      const role = model.model_json.roles[0];
+      expect(role.confidence).toBeGreaterThanOrEqual(0.9);
+    });
+
+    it('should correctly classify summary prose with dashes as non-roles', () => {
+      const doc = createMockDocument(
+        'doc-1',
+        'resume',
+        'SUMMARY\nExperienced designer with a passion for design systems — ' +
+          'creating scalable, component-driven architectures that improve team velocity and product quality. ' +
+          'Deep expertise in AI-driven workflows — automating research synthesis and reducing time-to-insight by 10–15x.\n\n' +
+          'PROFESSIONAL EXPERIENCE\n\nDesign Corp — Principal Designer\n2020 – 2023\n• Shipped components'
+      );
+      const model = careerModelService.buildFromDocuments('session-1', [doc]);
+
+      // Should extract only the real role, not the prose from summary
+      expect(model.model_json.roles.length).toBe(1);
+      const role = model.model_json.roles[0];
+      expect(role.company).toBe('Design Corp');
+    });
+  });
 });

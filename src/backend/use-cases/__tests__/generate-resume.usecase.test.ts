@@ -88,7 +88,7 @@ describe('GenerateResumeUseCase', () => {
   });
 
   it('generates an ATS resume on the success path (Claude mocked)', async () => {
-    db.saveDocument('resume', 'cv.txt', 'Jane Doe — Senior Product Designer, 8 years.');
+    db.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nDesign Corp — Senior Product Designer\n2020 – Present\n• Built design systems');
     let receivedPrompt = '';
     const useCase = new GenerateResumeUseCase({
       db,
@@ -117,7 +117,7 @@ describe('GenerateResumeUseCase', () => {
   });
 
   it('auto-builds and uses CareerModel for generation', async () => {
-    const doc = db.saveDocument('resume', 'cv.txt', 'Jane Doe — Senior Product Designer, 8 years.');
+    const doc = db.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nDesign Corp — Senior Product Designer\n2020 – Present\n• Built design systems');
     let receivedPrompt = '';
     const useCase = new GenerateResumeUseCase({
       db,
@@ -142,7 +142,7 @@ describe('GenerateResumeUseCase', () => {
   });
 
   it('propagates unexpected errors when Claude fails (route forwards to next)', async () => {
-    db.saveDocument('resume', 'cv.txt', 'Jane Doe');
+    db.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nDesign Corp — Senior Product Designer\n2020 – Present\n• Shipped things');
     const useCase = new GenerateResumeUseCase({
       db,
       extractor: fakeExtractor(async () => {
@@ -156,7 +156,7 @@ describe('GenerateResumeUseCase', () => {
   });
 
   it('saves an artifact after a successful generation and returns its id additively', async () => {
-    db.saveDocument('resume', 'cv.txt', 'Jane Doe — Senior Product Designer, 8 years.');
+    db.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nDesign Corp — Senior Product Designer\n2020 – Present\n• Built design systems');
     const created: CreateGeneratedMaterialInput[] = [];
     const useCase = new GenerateResumeUseCase({
       db,
@@ -216,7 +216,7 @@ describe('GenerateResumeUseCase', () => {
   });
 
   it('still returns the generated résumé when artifact saving fails', async () => {
-    db.saveDocument('resume', 'cv.txt', 'Jane Doe — Senior Product Designer.');
+    db.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nDesign Corp — Senior Product Designer\n2020 – Present\n• Achieved things');
     const useCase = new GenerateResumeUseCase({
       db,
       extractor: fakeExtractor(async () => ({ content: VALID_RESUME_TEXT })),
@@ -234,5 +234,118 @@ describe('GenerateResumeUseCase', () => {
     expect(typeof result.body.formatted_html).toBe('string');
     expect(result.body.artifact_id).toBeUndefined();
     expect(result.body.artifact_save_error).toBe('disk full');
+  });
+
+  describe('Professional Experience Validation Guard', () => {
+    it('returns 422 when no professional experience can be extracted', async () => {
+      // Upload a resume with no extractable professional experience
+      db.saveDocument('resume', 'no-experience.txt', 'Jane Doe\nA bootcamp graduate with no prior work history.');
+      const useCase = new GenerateResumeUseCase({
+        db,
+        extractor: fakeExtractor(async () => ({ content: VALID_RESUME_TEXT })),
+      });
+
+      const result = await useCase.execute({ job_description: 'Senior PD role' });
+
+      expect(result.statusCode).toBe(422);
+      expect(result.body.success).toBe(false);
+      expect(String(result.body.error)).toMatch(/Professional experience/i);
+      expect(String(result.body.error)).toMatch(/Career Knowledge Layer/i);
+      expect((result.body as any).validation).toBeDefined();
+      expect((result.body as any).validation.hasRoles).toBe(false);
+    });
+
+    it('does not generate when validation fails (422)', async () => {
+      db.saveDocument('resume', 'no-experience.txt', 'Jane Doe — Bootcamp graduate.');
+      let claudeWasCalled = false;
+      const useCase = new GenerateResumeUseCase({
+        db,
+        extractor: fakeExtractor(async () => {
+          claudeWasCalled = true;
+          return { content: VALID_RESUME_TEXT };
+        }),
+      });
+
+      const result = await useCase.execute({ job_description: 'role' });
+
+      expect(result.statusCode).toBe(422);
+      expect(claudeWasCalled).toBe(false);
+    });
+
+    it('does not save an artifact when validation fails', async () => {
+      db.saveDocument('resume', 'no-experience.txt', 'Jane Doe — Bootcamp.');
+      const created: unknown[] = [];
+      const useCase = new GenerateResumeUseCase({
+        db,
+        extractor: fakeExtractor(async () => ({ content: VALID_RESUME_TEXT })),
+        materialRepository: {
+          create: (input) => {
+            created.push(input);
+            return { id: 'should-not-happen' };
+          },
+        },
+      });
+
+      const result = await useCase.execute({ job_description: 'role' });
+
+      expect(result.statusCode).toBe(422);
+      expect(created).toHaveLength(0);
+      expect(result.body.artifact_id).toBeUndefined();
+    });
+
+    it('includes actionable suggestion in validation response', async () => {
+      db.saveDocument('resume', 'no-exp.txt', 'Summary only — no work history.');
+      const useCase = new GenerateResumeUseCase({
+        db,
+        extractor: fakeExtractor(async () => ({ content: VALID_RESUME_TEXT })),
+      });
+
+      const result = await useCase.execute({ job_description: 'role' });
+
+      expect(result.statusCode).toBe(422);
+      const validation = (result.body as any).validation;
+      expect(validation.suggestion).toBeDefined();
+      expect(String(validation.suggestion)).toMatch(/upload.*resume/i);
+      expect(String(validation.suggestion)).toMatch(/employment history/i);
+    });
+
+    it('allows generation when professional experience exists', async () => {
+      // Document with extractable professional experience
+      db.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nSenior Designer | Acme | 2020 – 2023\n• Built things');
+      const useCase = new GenerateResumeUseCase({
+        db,
+        extractor: fakeExtractor(async () => ({ content: VALID_RESUME_TEXT })),
+      });
+
+      const result = await useCase.execute({ job_description: 'role' });
+
+      // Should proceed to normal generation (status 200)
+      expect(result.statusCode).toBe(200);
+      expect(result.body.success).toBe(true);
+    });
+
+    it('proceeds with generation when career model has roles from previous build', async () => {
+      // First call: extract career model with roles
+      db.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nSenior Designer | Acme | 2020 – 2023\n• Achievement');
+      const useCase1 = new GenerateResumeUseCase({
+        db,
+        extractor: fakeExtractor(async () => ({ content: VALID_RESUME_TEXT })),
+      });
+      await useCase1.execute({ job_description: 'role' });
+
+      // Career model now exists and has roles
+      const model = db.getLatestCareerModel();
+      expect(model?.model_json.roles.length).toBeGreaterThan(0);
+
+      // Second call: career model already built, should proceed
+      const useCase2 = new GenerateResumeUseCase({
+        db,
+        extractor: fakeExtractor(async () => ({ content: VALID_RESUME_TEXT })),
+      });
+      const result = await useCase2.execute({ job_description: 'different role' });
+
+      expect(result.statusCode).toBe(200);
+      expect(result.body.success).toBe(true);
+    });
   });
 });
