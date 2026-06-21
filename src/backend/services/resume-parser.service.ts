@@ -148,20 +148,23 @@ export class ResumeParser {
    * Heuristic: Contains company + job title + optional dates
    */
   private isRoleHeader(line: string): boolean {
-    // Role headers typically have:
-    // - Job Title\nCompany | Location\nDates
-    // Or: Job Title at Company | Location | Dates
-    return (
-      (line.includes('|') || line.includes('–') || line.includes('-')) &&
-      !line.startsWith('•') &&
-      !line.match(/^\d{4}/)
-    );
+    // Role headers can be:
+    // - "Title — Company" (em-dash format)
+    // - "Title | Company" (pipe format)
+    // - "Title – Company" (en-dash format)
+    // But NOT date lines or bullets
+    if (line.startsWith('•') || line.match(/^\d{4}/)) return false;
+
+    // Must have em-dash (—), en-dash (–), or pipe (|) as separator
+    return line.includes('—') || line.includes('–') || (line.includes('|') && !line.includes('•'));
   }
 
   /**
    * Parse role header into components
-   * Expects format: "Job Title | Company | Location | Dates"
-   * Or: "Job Title\nCompany | Location\nDates"
+   * Handles multiple formats:
+   * - "Job Title — Company"     (em-dash, Claude output format)
+   * - "Title – Company"         (en-dash)
+   * - "Title | Company | Location | Dates"  (pipe format)
    */
   private parseRoleHeader(line: string): {
     jobTitle: string;
@@ -170,9 +173,26 @@ export class ResumeParser {
     startDate?: string;
     endDate?: string;
   } {
-    // Split by pipe
-    const parts = line.split('|').map((p) => p.trim());
+    // Try em-dash format first: "Title — Company"
+    if (line.includes('—')) {
+      const [title, company] = line.split('—').map((p) => p.trim());
+      return {
+        jobTitle: title || '',
+        company: company || '',
+      };
+    }
 
+    // Try en-dash format: "Title – Company"
+    if (line.includes('–') && !line.includes('|')) {
+      const [title, company] = line.split('–').map((p) => p.trim());
+      return {
+        jobTitle: title || '',
+        company: company || '',
+      };
+    }
+
+    // Fall back to pipe format: "Title | Company | Location | Dates"
+    const parts = line.split('|').map((p) => p.trim());
     let jobTitle = parts[0] || '';
     let company = parts[1] || '';
     let location = parts[2] || '';

@@ -223,92 +223,212 @@ export class CareerModelService {
 
     for (const doc of resumeDocs) {
       const text = doc.raw_text;
-      const lines = text.split('\n');
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-      let currentRole: Partial<ExtractedRole> | null = null;
-
-      for (let i = 0; i < lines.length; i++) {
+      let i = 0;
+      while (i < lines.length) {
         const line = lines[i];
-        const trimmed = line.trim();
 
-        // Section header detection (skip these)
-        if (
-          trimmed.match(/^(PROFESSIONAL EXPERIENCE|EXPERIENCE|WORK HISTORY|EDUCATION|SKILLS|SUMMARY)/i) ||
-          trimmed.endsWith(':') === false
-        ) {
-          if (trimmed.match(/^(PROFESSIONAL|EXPERIENCE|WORK HISTORY|EDUCATION)/i)) {
+        // Skip section headers
+        if (line.match(/^(PROFESSIONAL EXPERIENCE|EXPERIENCE|WORK HISTORY|EDUCATION|SKILLS|SUMMARY|CORE|EXPERTISE|TOOLS|CERTIFICATIONS|PROJECTS)/i)) {
+          i++;
+          continue;
+        }
+
+        // Try em-dash format first: "Company — Title" or "Title — Company"
+        if (this.isEmDashRoleHeader(line)) {
+          const result = this.parseEmDashRole(line, lines, i, doc.id);
+          if (result) {
+            roles.push(result.role);
+            i = result.nextIndex;
             continue;
           }
         }
 
-        // Role header pattern: "Title | Company" or "Title\nCompany" or just two lines with caps
-        const pipeMatch = trimmed.match(/^(.+?)\s*\|\s*(.+?)(?:\s*\|\s*(.+))?$/);
-        if (pipeMatch && !trimmed.match(/^(PROFESSIONAL|EDUCATION|SKILLS)/i)) {
-          if (currentRole && currentRole.title) {
-            roles.push({
-              title: currentRole.title,
-              company: currentRole.company || '',
-              startDate: currentRole.startDate,
-              endDate: currentRole.endDate,
-              location: currentRole.location,
-              achievements: currentRole.achievements || [],
-              sourceDocumentId: doc.id,
-              confidence: 0.9,
-            });
-          }
-
-          currentRole = {
-            title: pipeMatch[1].trim(),
-            company: pipeMatch[2].trim(),
-            achievements: [],
-          };
-
-          // Check for dates on same line or next line
-          if (pipeMatch[3]) {
-            const dateMatch = pipeMatch[3].match(
-              /(\d{4})\s*[-–]\s*(?:(\d{4})|Present|Current)/i
-            );
-            if (dateMatch) {
-              currentRole.startDate = dateMatch[1];
-              currentRole.endDate = dateMatch[2] || 'Present';
-            }
+        // Try pipe format: "Title | Company | ..." (for backward compatibility)
+        if (line.includes('|') && !line.startsWith('•') && this.couldBePipeRoleHeader(line)) {
+          const result = this.parsePipeRole(line, lines, i, doc.id);
+          if (result) {
+            roles.push(result.role);
+            i = result.nextIndex;
+            continue;
           }
         }
 
-        // Bullet point as achievement
-        if (currentRole && trimmed.match(/^[•\-\*]\s/) && trimmed.length > 10) {
-          const achievement = trimmed.replace(/^[•\-\*]\s+/, '').trim();
-          if (currentRole.achievements) {
-            currentRole.achievements.push(achievement);
-          }
-        }
-
-        // Date pattern on separate line
-        if (currentRole && !currentRole.startDate) {
-          const dateMatch = trimmed.match(/(\d{4})\s*[-–]\s*(?:(\d{4})|Present|Current)/i);
-          if (dateMatch) {
-            currentRole.startDate = dateMatch[1];
-            currentRole.endDate = dateMatch[2] || 'Present';
-          }
-        }
-      }
-
-      // Don't forget the last role
-      if (currentRole && currentRole.title) {
-        roles.push({
-          title: currentRole.title,
-          company: currentRole.company || '',
-          startDate: currentRole.startDate,
-          endDate: currentRole.endDate,
-          location: currentRole.location,
-          achievements: currentRole.achievements || [],
-          sourceDocumentId: doc.id,
-          confidence: 0.85,
-        });
+        i++;
       }
     }
 
     return roles;
+  }
+
+  private isEmDashRoleHeader(line: string): boolean {
+    // "Company — Title" or "Title — Company"
+    // Must have exactly ONE em-dash BEFORE any pipes (not multiple)
+    // Must not start with bullet, number, or look like email/date
+    if (line.match(/^[•\-\*\d]/) || line.includes('@') || line.length < 10) return false;
+    if (line.match(/^(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i))
+      return false;
+
+    // If line has pipes, don't treat it as em-dash format (pipe format takes precedence)
+    if (line.includes('|')) return false;
+
+    // Count only em-dashes (—), not en-dashes in date ranges
+    // This handles "Company — Title" format but not "2020 – 2023" format
+    const emDashCount = (line.match(/—/g) || []).length;
+    if (emDashCount === 1) return true;
+
+    // Also accept en-dash if it's clearly a single separator (no numbers nearby)
+    // This avoids matching "2020 – 2023" date ranges
+    const enDashCount = (line.match(/–/g) || []).length;
+    if (enDashCount === 1 && !line.match(/\d+\s*–\s*\d+/)) return true;
+
+    return false;
+  }
+
+  private couldBePipeRoleHeader(line: string): boolean {
+    // "Title | Company | Dates" format
+    // Must not be a bullet or date line
+    if (line.startsWith('•') || line.match(/^\d{4}/)) return false;
+    return line.includes('|');
+  }
+
+  private parseEmDashRole(
+    headerLine: string,
+    lines: string[],
+    startIndex: number,
+    docId: string
+  ): { role: ExtractedRole; nextIndex: number } | null {
+    const dashMatch = headerLine.match(/^(.+?)\s*(?:—|–)\s*(.+?)$/);
+    if (!dashMatch) return null;
+
+    const part1 = dashMatch[1].trim();
+    const part2 = dashMatch[2].trim();
+
+    // Determine which is company and which is title
+    // If part1 has "LMS", "Corp", "Inc", it's probably the company
+    let company = part1;
+    let title = part2;
+    if (!part1.match(/\b(LMS|Corp|Inc|Ltd|LLC|Company|SaaS)\b/i) && part2.match(/\b(LMS|Corp|Inc|Ltd|LLC)\b/i)) {
+      company = part2;
+      title = part1;
+    }
+
+    const achievements: string[] = [];
+    let startDate: string | undefined;
+    let endDate: string | undefined;
+    let location: string | undefined;
+    let i = startIndex + 1;
+
+    // Look for date/location line
+    if (i < lines.length) {
+      const nextLine = lines[i];
+      const dateMatch = nextLine.match(/^(.+?)\s+[-–]\s+(.+?)(?:\s*\(([^)]+)\))?$/);
+      if (dateMatch && nextLine.match(/\d{4}/)) {
+        startDate = this.extractYear(dateMatch[1]);
+        endDate = this.extractYear(dateMatch[2]) || (dateMatch[2].match(/present|current/i) ? 'Present' : undefined);
+        if (dateMatch[3]) {
+          location = dateMatch[3].trim();
+        }
+        i++;
+
+        // Collect bullets
+        while (i < lines.length) {
+          const line = lines[i];
+          if (line.match(/^[•\-\*]\s/) && line.length > 10) {
+            const achievement = line.replace(/^[•\-\*]\s+/, '').trim();
+            achievements.push(achievement);
+            i++;
+          } else if (!line || line.match(/^(PROFESSIONAL|EDUCATION|SKILLS|EXPERIENCE)/i) || this.isEmDashRoleHeader(line) || this.couldBePipeRoleHeader(line)) {
+            break;
+          } else {
+            i++;
+          }
+        }
+      }
+    }
+
+    return {
+      role: {
+        title,
+        company,
+        startDate,
+        endDate,
+        location,
+        achievements,
+        sourceDocumentId: docId,
+        confidence: 0.95,
+      },
+      nextIndex: i,
+    };
+  }
+
+  private parsePipeRole(
+    headerLine: string,
+    lines: string[],
+    startIndex: number,
+    docId: string
+  ): { role: ExtractedRole; nextIndex: number } | null {
+    const parts = headerLine.split('|').map(p => p.trim());
+    if (parts.length < 2) return null;
+
+    const title = parts[0];
+    const company = parts[1];
+    let startDate: string | undefined;
+    let endDate: string | undefined;
+    let location = parts[2];
+
+    // Check if dates are in parts[2] or parts[3]
+    if (location && location.match(/\d{4}/)) {
+      const dateMatch = location.match(/(.+?)\s+[-–]\s+(.+)/);
+      if (dateMatch) {
+        startDate = this.extractYear(dateMatch[1]);
+        endDate = this.extractYear(dateMatch[2]);
+        location = parts[3];
+      }
+    } else if (parts[3]) {
+      const dateMatch = parts[3].match(/(.+?)\s+[-–]\s+(.+)/);
+      if (dateMatch) {
+        startDate = this.extractYear(dateMatch[1]);
+        endDate = this.extractYear(dateMatch[2]);
+      }
+    }
+
+    const achievements: string[] = [];
+    let i = startIndex + 1;
+
+    // Collect bullets
+    while (i < lines.length) {
+      const line = lines[i];
+      if (line.match(/^[•\-\*]\s/) && line.length > 10) {
+        const achievement = line.replace(/^[•\-\*]\s+/, '').trim();
+        achievements.push(achievement);
+        i++;
+      } else if (!line || line.match(/^(PROFESSIONAL|EDUCATION|SKILLS|EXPERIENCE)/i) || this.couldBePipeRoleHeader(line)) {
+        break;
+      } else {
+        i++;
+      }
+    }
+
+    return {
+      role: {
+        title,
+        company,
+        startDate,
+        endDate,
+        location,
+        achievements,
+        sourceDocumentId: docId,
+        confidence: 0.9,
+      },
+      nextIndex: i,
+    };
+  }
+
+  private extractYear(dateStr: string): string | undefined {
+    const match = dateStr.match(/\d{4}/);
+    return match ? match[0] : undefined;
   }
 
   private extractEducation(documents: Document[]): ExtractedEducation[] {
