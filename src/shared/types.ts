@@ -151,3 +151,28 @@ export interface CareerModel {
   model_version: string;
   created_at: Date;
 }
+
+// Resume Quality Report
+export interface ResumeQualityReport {
+  exportReady: boolean;
+  overallStatus: 'pass' | 'warn' | 'fail';
+  ats: {
+    status: 'pass' | 'warn' | 'fail';
+    warnings: string[];
+  };
+  truthfulness: {
+    status: 'pass' | 'warn' | 'fail';
+    supportedClaims: string[];
+    weaklySupportedClaims: string[];
+    unsupportedClaims: string[];
+  };
+  keywords: {
+    matched: string[];
+    missing: string[];
+    suggestedIfTruthful: string[];
+  };
+  length: {
+    estimatedPages: number;
+    warnings: string[];
+  };
+}

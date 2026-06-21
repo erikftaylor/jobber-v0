@@ -6,12 +6,15 @@
  * in the node test environment (no DOM required).
  */
 
+import type { ResumeQualityReport } from '../shared/types';
+
 export interface SavedResume {
   id: string;
   type: string;
   title: string;
   generated_content: string;
   formatted_html: string | null;
+  quality_report?: ResumeQualityReport | null;
   created_at: string;
 }
 

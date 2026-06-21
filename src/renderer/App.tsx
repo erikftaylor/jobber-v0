@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { UploadZone } from './components/UploadZone';
-import type { Document } from '../shared/types';
+import type { Document, ResumeQualityReport } from '../shared/types';
 import { fetchSavedResumes, fetchSavedResume, formatSavedDate, type SavedResume } from './savedResumes';
 
 interface Session {
@@ -26,6 +26,7 @@ interface ResumeArtifact {
   generatedAt: Date;
   jobDescription: string;
   resumeId?: string; // Backend-persisted resume ID (for DOCX/archive exports)
+  qualityReport?: ResumeQualityReport; // Quality assessment of the generated resume
 }
 
 export const App: React.FC = () => {
@@ -113,6 +114,7 @@ export const App: React.FC = () => {
         html: material.formatted_html,
         generatedAt: new Date(material.created_at),
         jobDescription: '',
+        qualityReport: material.quality_report ?? undefined,
       };
       setCurrentArtifact(artifact);
       setGeneratedContent(material.generated_content);
@@ -251,6 +253,7 @@ export const App: React.FC = () => {
         generatedAt: new Date(),
         jobDescription: jd,
         resumeId: data.artifact_id, // Persisted resume ID from backend
+        qualityReport: data.qualityReport, // Quality assessment from backend
       };
 
       // If the backend persisted this generation, refresh the saved list
@@ -427,6 +430,115 @@ export const App: React.FC = () => {
     }
   };
 
+  // Render the quality report panel
+  const renderQualityReport = () => {
+    if (!currentArtifact?.qualityReport) {
+      if (currentArtifact && !currentArtifact.qualityReport) {
+        return (
+          <div className="quality-report-panel">
+            <p className="quality-unavailable">Quality check unavailable for this older resume.</p>
+          </div>
+        );
+      }
+      return null;
+    }
+
+    const report = currentArtifact.qualityReport;
+    const getStatusDisplay = (status: string) => {
+      if (status === 'pass') return '✓ Pass';
+      if (status === 'warn') return '⚠ Warning';
+      if (status === 'fail') return '✗ Fail';
+      return status;
+    };
+
+    const getOverallMessage = () => {
+      if (report.overallStatus === 'pass') return 'Ready to export';
+      if (report.overallStatus === 'warn') return 'Needs review';
+      return 'Not ready to export';
+    };
+
+    return (
+      <div className="quality-report-panel">
+        <div className="quality-header">
+          <h3>Resume Quality Check</h3>
+          <div className={`quality-overall quality-${report.overallStatus}`}>
+            {getOverallMessage()}
+          </div>
+        </div>
+
+        <div className="quality-section">
+          <h4>Source Support</h4>
+          <p className="quality-status">{getStatusDisplay(report.truthfulness.status)}</p>
+          {report.truthfulness.supportedClaims.length > 0 && (
+            <div className="quality-list">
+              <p className="quality-label">✓ Supported claims ({report.truthfulness.supportedClaims.length})</p>
+              {report.truthfulness.supportedClaims.slice(0, 2).map((claim, i) => (
+                <p key={i} className="quality-item">{claim.substring(0, 60)}...</p>
+              ))}
+              {report.truthfulness.supportedClaims.length > 2 && (
+                <p className="quality-item-more">+{report.truthfulness.supportedClaims.length - 2} more</p>
+              )}
+            </div>
+          )}
+          {report.truthfulness.unsupportedClaims.length > 0 && (
+            <div className="quality-list quality-warning">
+              <p className="quality-label">⚠ Potential unsupported claims ({report.truthfulness.unsupportedClaims.length})</p>
+              {report.truthfulness.unsupportedClaims.slice(0, 1).map((claim, i) => (
+                <p key={i} className="quality-item">{claim.substring(0, 60)}...</p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="quality-section">
+          <h4>ATS Formatting</h4>
+          <p className="quality-status">{getStatusDisplay(report.ats.status)}</p>
+          {report.ats.warnings.length > 0 ? (
+            <div className="quality-list quality-warning">
+              {report.ats.warnings.slice(0, 2).map((w, i) => (
+                <p key={i} className="quality-item">• {w}</p>
+              ))}
+              {report.ats.warnings.length > 2 && (
+                <p className="quality-item-more">+{report.ats.warnings.length - 2} more</p>
+              )}
+            </div>
+          ) : (
+            <p className="quality-item quality-ok">Likely ATS-safe</p>
+          )}
+        </div>
+
+        <div className="quality-section">
+          <h4>Keyword Alignment</h4>
+          <p className="quality-label">Matched keywords: {report.keywords.matched.length}</p>
+          {report.keywords.missing.length > 0 && (
+            <div className="quality-list quality-warning">
+              <p className="quality-label">Missing keywords ({report.keywords.missing.length})</p>
+              <p className="quality-item">{report.keywords.missing.slice(0, 3).join(', ')}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="quality-section">
+          <h4>Length & Pages</h4>
+          <p className="quality-item">Estimated {report.length.estimatedPages} page{report.length.estimatedPages !== 1 ? 's' : ''}</p>
+          {report.length.warnings.length > 0 && (
+            <div className="quality-list quality-warning">
+              {report.length.warnings.map((w, i) => (
+                <p key={i} className="quality-item">⚠ {w}</p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {!report.exportReady && (
+          <div className="quality-warning-export">
+            This resume has issues that should be reviewed before export.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -553,6 +665,9 @@ export const App: React.FC = () => {
                   <p key={i}>{line || <br />}</p>
                 ))}
               </div>
+
+              {renderQualityReport()}
+
               <div className="button-group">
                 <button
                   onClick={() => {
@@ -1068,6 +1183,128 @@ export const App: React.FC = () => {
         .saved-meta {
           font-size: 11px;
           color: var(--text-secondary);
+        }
+
+        .quality-report-panel {
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          padding: 16px;
+          margin: 16px 0;
+        }
+
+        .quality-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+          gap: 12px;
+        }
+
+        .quality-header h3 {
+          margin: 0;
+          font-size: 14px;
+          font-weight: 600;
+        }
+
+        .quality-overall {
+          padding: 6px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 600;
+          white-space: nowrap;
+        }
+
+        .quality-pass {
+          background: #e6ffe6;
+          color: #1a5c1a;
+        }
+
+        .quality-warn {
+          background: #fff4e6;
+          color: #8c6600;
+        }
+
+        .quality-fail {
+          background: #ffe6e6;
+          color: #8c1a1a;
+        }
+
+        .quality-section {
+          margin-bottom: 12px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .quality-section:last-child {
+          border-bottom: none;
+          margin-bottom: 0;
+          padding-bottom: 0;
+        }
+
+        .quality-section h4 {
+          margin: 0 0 8px 0;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .quality-status {
+          margin: 0 0 8px 0;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .quality-label {
+          margin: 0 0 4px 0;
+          font-size: 11px;
+          font-weight: 500;
+          color: var(--text-secondary);
+        }
+
+        .quality-list {
+          margin: 8px 0 0 0;
+        }
+
+        .quality-list.quality-warning {
+          background: rgba(255, 165, 0, 0.05);
+          padding: 8px;
+          border-radius: 3px;
+        }
+
+        .quality-item {
+          margin: 4px 0;
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .quality-item.quality-ok {
+          color: #1a5c1a;
+          font-weight: 500;
+        }
+
+        .quality-item-more {
+          margin: 4px 0;
+          font-size: 11px;
+          color: var(--text-secondary);
+          font-style: italic;
+        }
+
+        .quality-warning-export {
+          background: var(--error-bg);
+          border: 1px solid #ffc0c0;
+          color: var(--error-text);
+          padding: 8px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          margin-top: 12px;
+        }
+
+        .quality-unavailable {
+          color: var(--text-secondary);
+          font-size: 12px;
+          font-style: italic;
+          margin: 0;
         }
       `}</style>
     </div>
