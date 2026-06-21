@@ -23,6 +23,7 @@ export interface CreateGeneratedMaterialInput {
   title: string;
   jobDescriptionHash: string;
   sourceDocumentIds: string[];
+  careerModelId?: string;
   generatedContent: string;
   structuredResumeJson: unknown;
   renderedHtml: string | null;
@@ -38,6 +39,7 @@ export interface GeneratedMaterial {
   title: string;
   jobDescriptionHash: string;
   sourceDocumentIds: string[];
+  careerModelId?: string;
   generatedContent: string;
   structuredResumeJson: unknown;
   renderedHtml: string | null;
@@ -59,10 +61,10 @@ export class GeneratedMaterialRepository {
     this.db
       .prepare(
         `INSERT INTO generated_resumes (
-          id, type, title, job_description_hash, source_document_ids,
+          id, type, title, job_description_hash, source_document_ids, career_model_id,
           generated_content, structured_resume_json, rendered_html,
           formatting_error, format_version, prompt_version, model, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -70,6 +72,7 @@ export class GeneratedMaterialRepository {
         input.title,
         input.jobDescriptionHash,
         JSON.stringify(input.sourceDocumentIds ?? []),
+        input.careerModelId ?? null,
         input.generatedContent,
         input.structuredResumeJson == null ? null : JSON.stringify(input.structuredResumeJson),
         input.renderedHtml,
@@ -86,6 +89,7 @@ export class GeneratedMaterialRepository {
       title: input.title,
       jobDescriptionHash: input.jobDescriptionHash,
       sourceDocumentIds: input.sourceDocumentIds ?? [],
+      careerModelId: input.careerModelId,
       generatedContent: input.generatedContent,
       structuredResumeJson: input.structuredResumeJson ?? null,
       renderedHtml: input.renderedHtml,
@@ -118,6 +122,7 @@ export class GeneratedMaterialRepository {
       title: row.title,
       jobDescriptionHash: row.job_description_hash,
       sourceDocumentIds: JSON.parse(row.source_document_ids),
+      careerModelId: row.career_model_id ?? undefined,
       generatedContent: row.generated_content,
       structuredResumeJson: row.structured_resume_json ? JSON.parse(row.structured_resume_json) : null,
       renderedHtml: row.rendered_html ?? null,

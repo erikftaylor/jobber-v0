@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS generated_resumes (
   title TEXT NOT NULL,
   job_description_hash TEXT NOT NULL,
   source_document_ids JSON NOT NULL,     -- string[]
+  career_model_id TEXT,                  -- FK to career_models; nullable for backward compatibility
   generated_content TEXT NOT NULL,       -- raw Claude resume text
   structured_resume_json JSON,           -- normalized StructuredResume; null on formatting fallback
   rendered_html TEXT,                    -- ATS HTML; null on formatting fallback
@@ -74,7 +75,8 @@ CREATE TABLE IF NOT EXISTS generated_resumes (
   format_version TEXT,
   prompt_version TEXT,
   model TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (career_model_id) REFERENCES career_models(id)
 );
 
 -- Career Knowledge Layer: structured, persistent knowledge extracted from source documents

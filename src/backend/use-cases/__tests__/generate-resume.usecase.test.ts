@@ -110,14 +110,14 @@ describe('GenerateResumeUseCase', () => {
     expect(result.body.based_on_documents).toBe(1);
     expect(result.body.stats).toBeDefined();
     expect((result.body.validation as { warnings: unknown[] }).warnings).toBeInstanceOf(Array);
-    // The prompt still includes the job description and raw document context.
+    // The prompt includes the job description and Career Knowledge Layer
     expect(receivedPrompt).toContain('Lead enterprise design systems');
-    expect(receivedPrompt).toContain('Jane Doe — Senior Product Designer');
+    expect(receivedPrompt).toContain('CANDIDATE\'S CAREER KNOWLEDGE LAYER');
+    expect(receivedPrompt).toContain('Do NOT invent');
   });
 
-  it('calls Claude with exactly the prompt the builder + career context produce', async () => {
-    db.saveDocument('resume', 'cv.txt', 'Jane Doe — Senior Product Designer, 8 years.');
-    db.saveDocument('linkedin', 'li.txt', 'Profile summary text');
+  it('auto-builds and uses CareerModel for generation', async () => {
+    const doc = db.saveDocument('resume', 'cv.txt', 'Jane Doe — Senior Product Designer, 8 years.');
     let receivedPrompt = '';
     const useCase = new GenerateResumeUseCase({
       db,
@@ -127,15 +127,18 @@ describe('GenerateResumeUseCase', () => {
       }),
     });
 
-    await useCase.execute({ job_description: 'Lead enterprise design systems' });
+    const result = await useCase.execute({ job_description: 'Lead enterprise design systems' });
 
-    // Behavior equivalence: the use case orchestrates the same services rather
-    // than building the prompt inline.
-    const expectedPrompt = resumePromptBuilderService.buildResumePrompt({
-      careerContext: careerContextService.build(db.getAllDocuments()),
-      jobDescription: 'Lead enterprise design systems',
-    });
-    expect(receivedPrompt).toBe(expectedPrompt);
+    // Should succeed
+    expect(result.statusCode).toBe(200);
+    // Prompt should mention it uses the Career Knowledge Layer
+    expect(receivedPrompt).toContain('CAREER KNOWLEDGE LAYER');
+    // Prompt should include the job description
+    expect(receivedPrompt).toContain('Lead enterprise design systems');
+    // CareerModel should have been created and included in the artifact
+    const careerModel = db.getLatestCareerModel();
+    expect(careerModel).toBeDefined();
+    expect(careerModel?.source_document_ids).toContain(doc.id);
   });
 
   it('propagates unexpected errors when Claude fails (route forwards to next)', async () => {

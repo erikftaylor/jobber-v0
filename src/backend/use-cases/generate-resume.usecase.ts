@@ -18,8 +18,8 @@
 import { createHash } from 'crypto';
 import { resumeParser } from '../services/resume-parser.service';
 import { resumeOutputEngine } from '../services/resume-output-engine.service';
-import { careerContextService } from '../services/career-context.service';
 import { resumePromptBuilderService } from '../services/resume-prompt-builder.service';
+import { CareerModelService } from '../services/career-model.service';
 import type { DatabaseService } from '../services/database.service';
 import type { CreateGeneratedMaterialInput } from '../repositories/generated-material.repository';
 
@@ -36,7 +36,8 @@ interface MaterialRepositoryLike {
 }
 
 export interface GenerateResumeDeps {
-  db: Pick<DatabaseService, 'getAllDocuments'>;
+  db: Pick<DatabaseService, 'getAllDocuments' | 'getActiveSession' | 'getLatestCareerModel' | 'createCareerModel'>;
+  careerModelService?: CareerModelService;
   extractor?: ExtractorLike;
   // Optional: when present, successful generations are persisted as durable
   // artifacts. Saving is best-effort and never blocks returning the résumé.
@@ -58,6 +59,7 @@ export class GenerateResumeUseCase {
 
   async execute(body: GenerateResumeRequest = {}): Promise<GenerateResumeResult> {
     const { db, extractor } = this.deps;
+    const careerModelService = this.deps.careerModelService || new CareerModelService();
 
     if (!extractor) {
       return {
@@ -82,9 +84,26 @@ export class GenerateResumeUseCase {
       };
     }
 
-    const careerContext = careerContextService.build(documents);
+    // Build or refresh Career Model as needed
+    const activeSessionId = db.getActiveSession();
+    let careerModel = db.getLatestCareerModel();
+    const currentSourceHash = careerModelService.hashSources(documents);
+
+    if (!careerModel || careerModel.source_hash !== currentSourceHash) {
+      // Auto-build or rebuild if missing or stale
+      console.log('[Generate] Building fresh Career Model from documents');
+      careerModel = careerModelService.buildFromDocuments(activeSessionId, documents);
+      const persistedModel = db.createCareerModel({
+        source_document_ids: careerModel.source_document_ids,
+        source_hash: careerModel.source_hash,
+        model_json: careerModel.model_json,
+        model_version: careerModel.model_version,
+      });
+      careerModel = persistedModel;
+    }
+
     const prompt = resumePromptBuilderService.buildResumePrompt({
-      careerContext,
+      careerModel,
       jobDescription: job_description,
     });
 
@@ -111,6 +130,7 @@ export class GenerateResumeUseCase {
         title: this.buildTitle(job_description),
         jobDescriptionHash: this.hashJobDescription(job_description),
         sourceDocumentIds: documents.map(d => d.id),
+        careerModelId: careerModel.id,
         generatedContent: response.content,
         structuredResumeJson: output.normalized,
         renderedHtml: output.html,
@@ -143,6 +163,7 @@ export class GenerateResumeUseCase {
         title: this.buildTitle(job_description),
         jobDescriptionHash: this.hashJobDescription(job_description),
         sourceDocumentIds: documents.map(d => d.id),
+        careerModelId: careerModel.id,
         generatedContent: response.content,
         structuredResumeJson: null,
         renderedHtml: null,
