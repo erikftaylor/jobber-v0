@@ -173,36 +173,62 @@ export class ResumeParser {
     startDate?: string;
     endDate?: string;
   } {
-    // Try em-dash format first: "Title — Company"
+    // Try em-dash format: "Title — Company" or "Company — Title"
     if (line.includes('—')) {
-      const [title, company] = line.split('—').map((p) => p.trim());
+      const parts = line.split('—').map((p) => p.trim());
+      let jobTitle = parts[0];
+      let company = parts[1];
+
+      // Determine which is company and which is title
+      // If part0 has company keywords, it's the company
+      if (parts[0].match(/\b(LMS|Corp|Inc|Ltd|LLC|Company|SaaS|Inc\.|Ltd\.|Corp\.|LLC\.)\b/i)) {
+        company = parts[0];
+        jobTitle = parts[1];
+      }
+
       return {
-        jobTitle: title || '',
+        jobTitle: jobTitle || '',
         company: company || '',
       };
     }
 
-    // Try en-dash format: "Title – Company"
+    // Try en-dash format: "Title – Company" or "Company – Title"
     if (line.includes('–') && !line.includes('|')) {
-      const [title, company] = line.split('–').map((p) => p.trim());
+      const parts = line.split('–').map((p) => p.trim());
+      let jobTitle = parts[0];
+      let company = parts[1];
+
+      // Determine which is company and which is title
+      if (parts[0].match(/\b(LMS|Corp|Inc|Ltd|LLC|Company|SaaS|Inc\.|Ltd\.|Corp\.|LLC\.)\b/i)) {
+        company = parts[0];
+        jobTitle = parts[1];
+      }
+
       return {
-        jobTitle: title || '',
+        jobTitle: jobTitle || '',
         company: company || '',
       };
     }
 
-    // Fall back to pipe format: "Title | Company | Location | Dates"
+    // Fall back to pipe format: "Title | Company | Location | Dates" or "Title | Company | Dates"
     const parts = line.split('|').map((p) => p.trim());
     let jobTitle = parts[0] || '';
     let company = parts[1] || '';
     let location = parts[2] || '';
     let dates = parts[3] || '';
 
+    // Check if parts[2] is actually dates (contains date pattern like "2020 – 2023")
+    // If so, shift: parts[2]=dates, parts[3]=undefined
+    if (!dates && location && location.match(/\d{4}\s*[-–]\s*\d{4}/)) {
+      dates = location;
+      location = '';
+    }
+
     // Parse dates
     let startDate = '';
     let endDate = '';
     if (dates) {
-      const dateParts = dates.split('–').map((d) => d.trim());
+      const dateParts = dates.split(/[-–]/).map((d) => d.trim());
       startDate = dateParts[0] || '';
       endDate = dateParts[1] || '';
     }
@@ -212,7 +238,7 @@ export class ResumeParser {
       const locParts = location.split(/\s+(?=20\d{2})/);
       location = locParts[0];
       if (!startDate) {
-        const dateParts = locParts[1]?.split('–').map((d) => d.trim()) || [];
+        const dateParts = locParts[1]?.split(/[-–]/).map((d) => d.trim()) || [];
         startDate = dateParts[0] || '';
         endDate = dateParts[1] || '';
       }

@@ -323,19 +323,23 @@ export class CareerModelService {
     // Look for date/location line
     if (i < lines.length) {
       const nextLine = lines[i];
-      const dateMatch = nextLine.match(/^(.+?)\s+[-–]\s+(.+?)(?:\s*\(([^)]+)\))?$/);
+      // Match either: "2020 – 2023 (San Francisco, CA)" or "2020 – 2023 • San Francisco, CA"
+      const dateMatch = nextLine.match(/^(.+?)\s+[-–]\s+(.+?)(?:\s*\(([^)]+)\))?(?:\s*•\s*(.+))?$/);
       if (dateMatch && nextLine.match(/\d{4}/)) {
         startDate = this.extractYear(dateMatch[1]);
         endDate = this.extractYear(dateMatch[2]) || (dateMatch[2].match(/present|current/i) ? 'Present' : undefined);
+        // Check for location in parentheses [3] or after bullet [4]
         if (dateMatch[3]) {
           location = dateMatch[3].trim();
+        } else if (dateMatch[4]) {
+          location = dateMatch[4].trim();
         }
         i++;
 
-        // Collect bullets
+        // Collect bullets until next role header or section
         while (i < lines.length) {
           const line = lines[i];
-          if (line.match(/^[•\-\*]\s/) && line.length > 10) {
+          if (line.match(/^[•\-\*]\s/) && line.length > 5) {
             const achievement = line.replace(/^[•\-\*]\s+/, '').trim();
             achievements.push(achievement);
             i++;
@@ -372,8 +376,16 @@ export class CareerModelService {
     const parts = headerLine.split('|').map(p => p.trim());
     if (parts.length < 2) return null;
 
-    const title = parts[0];
-    const company = parts[1];
+    // Determine which is title and which is company
+    let title = parts[0];
+    let company = parts[1];
+
+    // If parts[0] looks like a company name (contains Corp, Inc, Ltd, etc.), swap
+    if (parts[0].match(/\b(Corp|Inc|Ltd|LLC|Company|SaaS|Inc\.|Ltd\.|Corp\.|LLC\.|LMS)\b/i)) {
+      title = parts[1];
+      company = parts[0];
+    }
+
     let startDate: string | undefined;
     let endDate: string | undefined;
     let location = parts[2];
@@ -400,11 +412,11 @@ export class CareerModelService {
     // Collect bullets
     while (i < lines.length) {
       const line = lines[i];
-      if (line.match(/^[•\-\*]\s/) && line.length > 10) {
+      if (line.match(/^[•\-\*]\s/) && line.length > 5) {
         const achievement = line.replace(/^[•\-\*]\s+/, '').trim();
         achievements.push(achievement);
         i++;
-      } else if (!line || line.match(/^(PROFESSIONAL|EDUCATION|SKILLS|EXPERIENCE)/i) || this.couldBePipeRoleHeader(line)) {
+      } else if (!line || line.match(/^(PROFESSIONAL|EDUCATION|SKILLS|EXPERIENCE)/i) || this.isEmDashRoleHeader(line) || this.couldBePipeRoleHeader(line)) {
         break;
       } else {
         i++;
