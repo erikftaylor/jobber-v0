@@ -435,7 +435,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Render the quality report panel
+  // Render the quality report panel with P2 enhancements
   const renderQualityReport = () => {
     if (!currentArtifact?.qualityReport) {
       if (currentArtifact && !currentArtifact.qualityReport) {
@@ -449,116 +449,122 @@ export const App: React.FC = () => {
     }
 
     const report = currentArtifact.qualityReport;
+
+    // Get status display with P2 styling
     const getStatusDisplay = (status: string) => {
-      if (status === 'pass') return '✓ Pass';
-      if (status === 'warn') return '⚠ Warning';
-      if (status === 'fail') return '✗ Fail';
-      return status;
+      const config = {
+        pass: { icon: '✓', label: 'Ready to Export', className: 'quality-pass' },
+        warn: { icon: '⚠', label: 'Review Issues', className: 'quality-warn' },
+        fail: { icon: '✗', label: 'Fix Required', className: 'quality-fail' }
+      };
+      return config[status as keyof typeof config] || config.pass;
     };
 
-    const getOverallMessage = () => {
-      if (report.overallStatus === 'pass') return 'Ready to export';
-      if (report.overallStatus === 'warn') return 'Needs review';
-      return 'Not ready to export';
-    };
+    const statusDisplay = getStatusDisplay(report.overallStatus);
+
+    // Count warnings and failures for summary line
+    const warningCount = report.ats?.warnings?.length || 0;
+    const missingKeywordCount = report.keywords?.missing?.length || 0;
 
     return (
       <div className="quality-report-panel">
-        <div className="quality-header">
-          <h3>Resume Quality Check</h3>
-          <div className={`quality-overall quality-${report.overallStatus}`}>
-            {getOverallMessage()}
+        {/* P2 Enhancement: Header with title and prominent status badge */}
+        <div className="quality-header-p2">
+          <h3>Quality Check</h3>
+          <div className={`quality-badge quality-badge-${statusDisplay.className}`}>
+            <span className="quality-badge-icon">{statusDisplay.icon}</span>
+            <span className="quality-badge-label">{statusDisplay.label}</span>
           </div>
         </div>
 
+        {/* P2 Enhancement: Summary line showing issue counts */}
+        {report.overallStatus !== 'pass' && (
+          <div className="quality-summary-line">
+            <p>
+              {warningCount > 0 && `${warningCount} ATS warning${warningCount !== 1 ? 's' : ''}`}
+              {warningCount > 0 && missingKeywordCount > 0 && ' • '}
+              {missingKeywordCount > 0 && `${missingKeywordCount} missing keyword${missingKeywordCount !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+        )}
+
+        {/* Source Support Section */}
         <div className="quality-section">
           <h4>Source Support</h4>
-          <p className="quality-status">{getStatusDisplay(report.truthfulness.status)}</p>
+          <div className={`quality-item quality-${report.truthfulness.status === 'pass' ? 'pass' : 'warn'}`}>
+            {report.truthfulness.status === 'pass' ? '✓ Pass' : '⚠ Warning'}
+          </div>
           {report.truthfulness.supportedClaims.length > 0 && (
-            <div className="quality-list">
-              <p className="quality-label">✓ Supported claims ({report.truthfulness.supportedClaims.length})</p>
+            <div className="quality-subsection">
+              <p className="quality-subsection-label">✓ Supported claims ({report.truthfulness.supportedClaims.length})</p>
               {report.truthfulness.supportedClaims.slice(0, 2).map((claim, i) => (
-                <p key={i} className="quality-item">{claim.substring(0, 60)}...</p>
+                <p key={i} className="quality-subsection-item">{claim.substring(0, 60)}...</p>
               ))}
               {report.truthfulness.supportedClaims.length > 2 && (
-                <p className="quality-item-more">+{report.truthfulness.supportedClaims.length - 2} more</p>
+                <p className="quality-subsection-more">+{report.truthfulness.supportedClaims.length - 2} more</p>
               )}
             </div>
           )}
           {report.truthfulness.unsupportedClaims.length > 0 && (
-            <div className="quality-list quality-warning">
-              <p className="quality-label">⚠ Potential unsupported claims ({report.truthfulness.unsupportedClaims.length})</p>
+            <div className="quality-subsection quality-subsection-warning">
+              <p className="quality-subsection-label">⚠ Potential unsupported claims ({report.truthfulness.unsupportedClaims.length})</p>
               {report.truthfulness.unsupportedClaims.slice(0, 1).map((claim, i) => (
-                <p key={i} className="quality-item">{claim.substring(0, 60)}...</p>
+                <p key={i} className="quality-subsection-item">{claim.substring(0, 60)}...</p>
               ))}
             </div>
           )}
         </div>
 
+        {/* ATS Formatting Section */}
         <div className="quality-section">
           <h4>ATS Formatting</h4>
-          <p className="quality-status">{getStatusDisplay(report.ats.status)}</p>
-          {(() => {
-            const activeWarnings = report.ats.warnings.filter(w => !dismissedWarnings.has(w));
-            return activeWarnings.length > 0 ? (
-              <div className="quality-list quality-warning">
-                {activeWarnings.slice(0, 2).map((w, i) => (
-                  <div key={i} className="quality-item-row">
-                    <p className="quality-item">• {w}</p>
-                    <button
-                      className="dismiss-btn"
-                      title="Dismiss this warning"
-                      onClick={() => dismissWarning(w)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                {activeWarnings.length > 2 && (
-                  <div className="quality-item-row">
-                    <p className="quality-item-more">+{activeWarnings.length - 2} more</p>
-                    <button
-                      className="dismiss-btn"
-                      title="Dismiss all warnings"
-                      onClick={acceptAllWarnings}
-                    >
-                      Dismiss all
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="quality-item quality-ok">Likely ATS-safe</p>
-            );
-          })()}
-        </div>
-
-        <div className="quality-section">
-          <h4>Keyword Alignment</h4>
-          <p className="quality-label">Matched keywords: {report.keywords.matched.length}</p>
-          {report.keywords.missing.length > 0 && (
-            <div className="quality-list quality-warning">
-              <p className="quality-label">Missing keywords ({report.keywords.missing.length})</p>
-              <p className="quality-item">{report.keywords.missing.slice(0, 3).join(', ')}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="quality-section">
-          <h4>Length & Pages</h4>
-          <p className="quality-item">Estimated {report.length.estimatedPages} page{report.length.estimatedPages !== 1 ? 's' : ''}</p>
-          {report.length.warnings.length > 0 && (
-            <div className="quality-list quality-warning">
-              {report.length.warnings.map((w, i) => (
-                <p key={i} className="quality-item">⚠ {w}</p>
+          <div className={`quality-item quality-${report.ats.status === 'pass' ? 'pass' : 'warn'}`}>
+            {report.ats.status === 'pass' ? '✓ Pass' : '⚠ Warning'}
+          </div>
+          {report.ats.warnings.length > 0 && (
+            <div className="quality-subsection quality-subsection-warning">
+              {report.ats.warnings.filter(w => !dismissedWarnings.has(w)).map((warning, i) => (
+                <div key={i} className="quality-warning-item">
+                  <p className="quality-warning-text">{warning}</p>
+                </div>
               ))}
             </div>
           )}
         </div>
 
-        {!report.exportReady && (
-          <div className="quality-warning-export">
-            This resume has issues that should be reviewed before export.
+        {/* Keywords Section */}
+        <div className="quality-section">
+          <h4>Keywords</h4>
+          <div className={`quality-item quality-${report.keywords.missing.length === 0 ? 'pass' : 'warn'}`}>
+            {report.keywords.missing.length === 0 ? '✓ Pass' : '⚠ Warning'}
+          </div>
+          {report.keywords.missing.length > 0 && (
+            <div className="quality-subsection quality-subsection-warning">
+              <p className="quality-subsection-label">Missing keywords ({report.keywords.missing.length})</p>
+              {report.keywords.missing.slice(0, 3).map((keyword, i) => (
+                <p key={i} className="quality-subsection-item">{keyword}</p>
+              ))}
+              {report.keywords.missing.length > 3 && (
+                <p className="quality-subsection-more">+{report.keywords.missing.length - 3} more</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Length & Pages Section */}
+        {report.length && (
+          <div className="quality-section">
+            <h4>Length & Pages</h4>
+            <div className={`quality-item quality-${report.length.warnings.length === 0 ? 'pass' : 'warn'}`}>
+              {report.length.warnings.length === 0 ? '✓ Pass' : '⚠ Warning'}
+            </div>
+            {report.length.warnings.length > 0 && (
+              <div className="quality-subsection">
+                {report.length.warnings.map((warning, i) => (
+                  <p key={i} className="quality-subsection-item">{warning}</p>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
