@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { UploadZone } from './components/UploadZone';
+import SessionDropdown from './components/SessionDropdown';
+import SessionWarningDialog from './components/SessionWarningDialog';
 import type { Document, ResumeQualityReport } from '../shared/types';
 import { fetchSavedResumes, fetchSavedResume, formatSavedDate, type SavedResume } from './savedResumes';
 
@@ -7,6 +9,13 @@ interface Session {
   id: string;
   name: string;
   created_at: Date;
+}
+
+interface SessionForDropdown {
+  id: string;
+  company: string;
+  title: string;
+  added_at: Date;
 }
 
 interface DocumentItem {
@@ -61,6 +70,9 @@ export const App: React.FC = () => {
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
   const [savedError, setSavedError] = useState<string | null>(null);
   const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
+  const [showWarningDialog, setShowWarningDialog] = useState(false);
+  const [extractedInfo, setExtractedInfo] = useState({ company: null as string | null, role: null as string | null, confidence: 0 });
+  const [isExtracting, setIsExtracting] = useState(false);
 
   useEffect(() => {
     loadSessions();
@@ -234,6 +246,67 @@ export const App: React.FC = () => {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to clear session');
+    }
+  };
+
+  /**
+   * Extract company and role from job description using Claude Haiku
+   */
+  const handleExtractJobInfo = async (jd: string = jobDescription) => {
+    if (!jd.trim()) return;
+
+    setIsExtracting(true);
+    try {
+      const response = await fetch('/api/kb/jobs/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobDescription: jd })
+      });
+
+      const extracted = await response.json();
+      setExtractedInfo(extracted);
+
+      // If extraction is confident and complete, auto-create session
+      if (extracted.confidence > 0.7 && extracted.company && extracted.role) {
+        await createSessionFromExtraction(extracted.company, extracted.role);
+      } else {
+        // Show warning dialog for manual entry
+        setShowWarningDialog(true);
+      }
+    } catch (error) {
+      console.error('Extraction failed:', error);
+      setShowWarningDialog(true);
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  /**
+   * Create a new session from extracted company and role information
+   */
+  const createSessionFromExtraction = async (company: string, role: string) => {
+    try {
+      // Create a session name combining company and role
+      const sessionName = `${company} - ${role}`;
+
+      const response = await fetch('/api/kb/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: sessionName })
+      });
+
+      if (!response.ok) throw new Error('Failed to create session');
+
+      const sessionResponse = await response.json();
+      const newSession = sessionResponse.session;
+
+      // Reload sessions to update the UI
+      await loadSessions();
+      setActiveSession(newSession.id);
+      setShowWarningDialog(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create session');
     }
   };
 
@@ -441,6 +514,25 @@ export const App: React.FC = () => {
     }
   };
 
+  /**
+   * Convert session data to format expected by SessionDropdown component
+   */
+  const getSessionsForDropdown = (): SessionForDropdown[] => {
+    return sessions.map(session => {
+      // Try to parse company and role from session name (format: "Company - Role")
+      const parts = session.name.split(' - ');
+      const company = parts[0] || 'Session';
+      const title = parts[1] || session.name;
+
+      return {
+        id: session.id,
+        company,
+        title,
+        added_at: session.created_at,
+      };
+    });
+  };
+
   // Render the quality report panel with P2 enhancements
   const renderQualityReport = () => {
     if (!currentArtifact?.qualityReport) {
@@ -581,6 +673,13 @@ export const App: React.FC = () => {
             <p className="subtitle">AI-Powered Job Application Assistant</p>
           </div>
           <div className="session-controls">
+            {sessions.length > 0 && (
+              <SessionDropdown
+                sessions={getSessionsForDropdown()}
+                activeSessionId={activeSession}
+                onSelectSession={handleSwitchSession}
+              />
+            )}
             <select value={activeSession} onChange={(e) => handleSwitchSession(e.target.value)} className="session-selector">
               {sessions.map(s => (
                 <option key={s.id} value={s.id}>
@@ -619,6 +718,13 @@ export const App: React.FC = () => {
 
       {error && <div className="error-banner">{error}</div>}
       {exportStatus && <div className="status-banner">{exportStatus}</div>}
+
+      <SessionWarningDialog
+        isOpen={showWarningDialog}
+        extracted={extractedInfo}
+        onConfirm={(data) => createSessionFromExtraction(data.company, data.role)}
+        onCancel={() => setShowWarningDialog(false)}
+      />
 
       <div className="app-layout">
         <aside className="left-panel">
@@ -665,15 +771,25 @@ export const App: React.FC = () => {
                   onChange={(e) => setJobDescription(e.target.value)}
                   placeholder="Paste the job description here..."
                   rows={12}
-                  disabled={isGenerating}
+                  disabled={isGenerating || isExtracting}
                 />
-                <button
-                  onClick={handleGenerate}
-                  disabled={isGenerating || documents.length === 0}
-                  className="btn-primary btn-large"
-                >
-                  {isGenerating ? 'Generating...' : 'Generate Resume'}
-                </button>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => handleExtractJobInfo(jobDescription)}
+                    disabled={isExtracting || !jobDescription.trim()}
+                    className="btn-secondary"
+                    title="Auto-extract company and job title, create a new session"
+                  >
+                    {isExtracting ? 'Extracting...' : 'Create Session'}
+                  </button>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isGenerating || documents.length === 0}
+                    className="btn-primary btn-large"
+                  >
+                    {isGenerating ? 'Generating...' : 'Generate Resume'}
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
