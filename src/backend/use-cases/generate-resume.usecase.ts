@@ -18,8 +18,9 @@
 import { createHash } from 'crypto';
 import { resumeParser } from '../services/resume-parser.service';
 import { resumeOutputEngine } from '../services/resume-output-engine.service';
-import { careerContextService } from '../services/career-context.service';
 import { resumePromptBuilderService } from '../services/resume-prompt-builder.service';
+import { CareerModelService } from '../services/career-model.service';
+import { resumeQualityReportService } from '../services/resume-quality-report.service';
 import type { DatabaseService } from '../services/database.service';
 import type { CreateGeneratedMaterialInput } from '../repositories/generated-material.repository';
 
@@ -36,7 +37,8 @@ interface MaterialRepositoryLike {
 }
 
 export interface GenerateResumeDeps {
-  db: Pick<DatabaseService, 'getAllDocuments'>;
+  db: Pick<DatabaseService, 'getAllDocuments' | 'getActiveSession' | 'getLatestCareerModel' | 'createCareerModel'>;
+  careerModelService?: CareerModelService;
   extractor?: ExtractorLike;
   // Optional: when present, successful generations are persisted as durable
   // artifacts. Saving is best-effort and never blocks returning the résumé.
@@ -58,6 +60,7 @@ export class GenerateResumeUseCase {
 
   async execute(body: GenerateResumeRequest = {}): Promise<GenerateResumeResult> {
     const { db, extractor } = this.deps;
+    const careerModelService = this.deps.careerModelService || new CareerModelService();
 
     if (!extractor) {
       return {
@@ -82,9 +85,43 @@ export class GenerateResumeUseCase {
       };
     }
 
-    const careerContext = careerContextService.build(documents);
+    // Build or refresh Career Model as needed
+    const activeSessionId = db.getActiveSession();
+    let careerModel = db.getLatestCareerModel();
+    const currentSourceHash = careerModelService.hashSources(documents);
+
+    if (!careerModel || careerModel.source_hash !== currentSourceHash) {
+      // Auto-build or rebuild if missing or stale
+      console.log('[Generate] Building fresh Career Model from documents');
+      careerModel = careerModelService.buildFromDocuments(activeSessionId, documents);
+      const persistedModel = db.createCareerModel({
+        source_document_ids: careerModel.source_document_ids,
+        source_hash: careerModel.source_hash,
+        model_json: careerModel.model_json,
+        model_version: careerModel.model_version,
+      });
+      careerModel = persistedModel;
+    }
+
+    // Validate that professional experience was extracted
+    if (!careerModel.model_json.roles || careerModel.model_json.roles.length === 0) {
+      console.log('[Generate] Validation failed: No professional experience found in Career Knowledge Layer');
+      return {
+        statusCode: 422,
+        body: {
+          success: false,
+          error: 'Professional experience could not be extracted from the Career Knowledge Layer. Resume generation stopped to prevent an incomplete artifact.',
+          validation: {
+            hasRoles: false,
+            message: 'The uploaded documents contain no identifiable professional work history.',
+            suggestion: 'Please upload a resume with employment history (company name, job title, and dates).',
+          },
+        },
+      };
+    }
+
     const prompt = resumePromptBuilderService.buildResumePrompt({
-      careerContext,
+      careerModel,
       jobDescription: job_description,
     });
 
@@ -107,13 +144,23 @@ export class GenerateResumeUseCase {
         `[Generate] Resume formatted: ${output.stats.experienceRoles} roles, ${output.stats.summaryWords} summary words, ${output.stats.estimatedPages} pages`
       );
 
+      // Build quality report
+      console.log('[Generate] Building quality report...');
+      const qualityReport = resumeQualityReportService.buildReport({
+        generatedContent: response.content,
+        careerModel,
+        jobDescription: job_description,
+      });
+
       const saved = this.persistArtifact({
         title: this.buildTitle(job_description),
         jobDescriptionHash: this.hashJobDescription(job_description),
         sourceDocumentIds: documents.map(d => d.id),
+        careerModelId: careerModel.id,
         generatedContent: response.content,
         structuredResumeJson: output.normalized,
         renderedHtml: output.html,
+        qualityReportJson: qualityReport,
       });
 
       return {
@@ -129,6 +176,7 @@ export class GenerateResumeUseCase {
             valid: output.validation.valid,
             warnings: output.validation.warnings,
           },
+          qualityReport,
           ...saved,
         },
       };
@@ -138,14 +186,23 @@ export class GenerateResumeUseCase {
       console.error('[Generate] Formatting error:', errorMsg);
       if (errorStack) console.error('[Generate] Stack:', errorStack);
 
+      // Build quality report even on format failure
+      const qualityReport = resumeQualityReportService.buildReport({
+        generatedContent: response.content,
+        careerModel,
+        jobDescription: job_description,
+      });
+
       // The text résumé generated successfully, so still persist the artifact.
       const saved = this.persistArtifact({
         title: this.buildTitle(job_description),
         jobDescriptionHash: this.hashJobDescription(job_description),
         sourceDocumentIds: documents.map(d => d.id),
+        careerModelId: careerModel.id,
         generatedContent: response.content,
         structuredResumeJson: null,
         renderedHtml: null,
+        qualityReportJson: qualityReport,
         formattingError: errorMsg,
       });
 
@@ -159,6 +216,7 @@ export class GenerateResumeUseCase {
           formatted_html: null,
           based_on_documents: documents.length,
           formatting_error: errorMsg,
+          qualityReport,
           ...saved,
         },
       };

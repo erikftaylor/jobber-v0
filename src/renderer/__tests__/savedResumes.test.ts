@@ -16,6 +16,24 @@ describe('fetchSavedResumes', () => {
     await expect(fetchSavedResumes()).resolves.toEqual(materials);
   });
 
+  it('returns materials with quality_report when present', async () => {
+    const materials = [
+      {
+        id: 'mat-1',
+        type: 'resume',
+        title: 'A',
+        generated_content: 'x',
+        formatted_html: null,
+        quality_report: { exportReady: true, overallStatus: 'pass', ats: { status: 'pass', warnings: [] }, truthfulness: { status: 'pass', supportedClaims: [], weaklySupportedClaims: [], unsupportedClaims: [] }, keywords: { matched: [], missing: [], suggestedIfTruthful: [] }, length: { estimatedPages: 1, warnings: [] } },
+        created_at: 'z',
+      },
+    ];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ success: true, materials })));
+
+    const result = await fetchSavedResumes();
+    expect(result[0].quality_report).toBeDefined();
+  });
+
   it('returns an empty array when materials is absent', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ success: true })));
 
@@ -35,6 +53,31 @@ describe('fetchSavedResume', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ success: true, material })));
 
     await expect(fetchSavedResume('mat-1')).resolves.toEqual(material);
+  });
+
+  it('returns the material with quality_report when present', async () => {
+    const material = {
+      id: 'mat-1',
+      type: 'resume',
+      title: 'A',
+      generated_content: 'x',
+      formatted_html: '<html></html>',
+      quality_report: { exportReady: true, overallStatus: 'pass', ats: { status: 'pass', warnings: [] }, truthfulness: { status: 'pass', supportedClaims: [], weaklySupportedClaims: [], unsupportedClaims: [] }, keywords: { matched: [], missing: [], suggestedIfTruthful: [] }, length: { estimatedPages: 1, warnings: [] } },
+      created_at: 'z',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ success: true, material })));
+
+    const result = await fetchSavedResume('mat-1');
+    expect(result.quality_report).toBeDefined();
+    expect(result.quality_report?.exportReady).toBe(true);
+  });
+
+  it('returns the material without quality_report for older resumes', async () => {
+    const material = { id: 'mat-1', type: 'resume', title: 'A', generated_content: 'x', formatted_html: '<html></html>', created_at: 'z' };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ success: true, material })));
+
+    const result = await fetchSavedResume('mat-1');
+    expect(result.quality_report).toBeUndefined();
   });
 
   it('throws with the server error message on 404', async () => {

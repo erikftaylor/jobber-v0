@@ -67,14 +67,31 @@ CREATE TABLE IF NOT EXISTS generated_resumes (
   title TEXT NOT NULL,
   job_description_hash TEXT NOT NULL,
   source_document_ids JSON NOT NULL,     -- string[]
+  career_model_id TEXT,                  -- FK to career_models; nullable for backward compatibility
   generated_content TEXT NOT NULL,       -- raw Claude resume text
   structured_resume_json JSON,           -- normalized StructuredResume; null on formatting fallback
   rendered_html TEXT,                    -- ATS HTML; null on formatting fallback
+  quality_report_json JSON,              -- truthfulness, ATS, keywords, length assessment
   formatting_error TEXT,                 -- set when the output engine fell back
   format_version TEXT,
   prompt_version TEXT,
   model TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (career_model_id) REFERENCES career_models(id)
+);
+
+-- Career Knowledge Layer: structured, persistent knowledge extracted from source documents
+-- One career model per session. When new documents are uploaded, a new career model is
+-- extracted and synthesized from the documents, creating a new version.
+CREATE TABLE IF NOT EXISTS career_models (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  source_document_ids JSON NOT NULL,     -- string[] of document IDs that were used to build this model
+  source_hash TEXT NOT NULL,              -- hash of concatenated source documents (for change detection)
+  model_json JSON NOT NULL,               -- structured career knowledge: contact, roles, projects, skills, tools, metrics, education, certifications, approvedClaims
+  model_version TEXT NOT NULL,            -- semantic version of the model schema (e.g., "1.0.0")
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (session_id) REFERENCES sessions(id)
 );
 
 -- Indexes for common queries
@@ -83,3 +100,5 @@ CREATE INDEX IF NOT EXISTS idx_documents_uploaded_at ON documents(uploaded_at);
 CREATE INDEX IF NOT EXISTS idx_generated_materials_job_id ON generated_materials(job_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_job_id ON conversations(job_id);
 CREATE INDEX IF NOT EXISTS idx_generated_resumes_created_at ON generated_resumes(created_at);
+CREATE INDEX IF NOT EXISTS idx_career_models_session_id ON career_models(session_id);
+CREATE INDEX IF NOT EXISTS idx_career_models_created_at ON career_models(created_at);

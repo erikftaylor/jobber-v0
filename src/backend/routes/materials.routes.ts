@@ -16,6 +16,7 @@ function toResponse(m: GeneratedMaterial) {
     title: m.title,
     generated_content: m.generatedContent,
     formatted_html: m.renderedHtml,
+    quality_report: m.qualityReportJson ?? null,
     created_at: m.createdAt,
   };
 }

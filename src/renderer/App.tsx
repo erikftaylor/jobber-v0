@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { UploadZone } from './components/UploadZone';
-import type { Document } from '../shared/types';
+import type { Document, ResumeQualityReport } from '../shared/types';
 import { fetchSavedResumes, fetchSavedResume, formatSavedDate, type SavedResume } from './savedResumes';
 
 interface Session {
@@ -25,7 +25,20 @@ interface ResumeArtifact {
   html: string | null;
   generatedAt: Date;
   jobDescription: string;
+  resumeId?: string; // Backend-persisted resume ID (for DOCX/archive exports)
+  qualityReport?: ResumeQualityReport; // Quality assessment of the generated resume
 }
+
+const EXPORT_STATUS = {
+  PDF: 'Exporting to PDF…',
+  DOCX: 'Exporting to DOCX…',
+};
+
+const QUALITY_STATUS_CONFIG = {
+  pass: { icon: '✓', label: 'Ready to Export', className: 'quality-pass' },
+  warn: { icon: '⚠', label: 'Review Issues', className: 'quality-warn' },
+  fail: { icon: '✗', label: 'Fix Required', className: 'quality-fail' }
+};
 
 export const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -47,6 +60,7 @@ export const App: React.FC = () => {
   const [savedResumes, setSavedResumes] = useState<SavedResume[]>([]);
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
   const [savedError, setSavedError] = useState<string | null>(null);
+  const [dismissedWarnings, setDismissedWarnings] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadSessions();
@@ -73,6 +87,9 @@ export const App: React.FC = () => {
       if (!response.ok) throw new Error('Failed to load documents');
       const data = await response.json();
       setDocuments(data.documents || []);
+      // Clear any stale error from an earlier failed load (e.g. backend not yet
+      // up on first mount) so the banner self-heals once a load succeeds.
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -94,6 +111,18 @@ export const App: React.FC = () => {
     }
   };
 
+  const dismissWarning = (warningText: string) => {
+    setDismissedWarnings(prev => new Set([...prev, warningText]));
+  };
+
+  const acceptAllWarnings = () => {
+    if (currentArtifact?.qualityReport?.ats.warnings) {
+      const allWarnings = new Set(dismissedWarnings);
+      currentArtifact.qualityReport.ats.warnings.forEach(w => allWarnings.add(w));
+      setDismissedWarnings(allWarnings);
+    }
+  };
+
   // Reopen a saved résumé into the same state the generate flow uses, so the
   // existing preview/export path works unchanged.
   const handleOpenSavedResume = async (id: string) => {
@@ -109,6 +138,7 @@ export const App: React.FC = () => {
         html: material.formatted_html,
         generatedAt: new Date(material.created_at),
         jobDescription: '',
+        qualityReport: material.quality_report ?? undefined,
       };
       setCurrentArtifact(artifact);
       setGeneratedContent(material.generated_content);
@@ -246,6 +276,8 @@ export const App: React.FC = () => {
         html: data.formatted_html,
         generatedAt: new Date(),
         jobDescription: jd,
+        resumeId: data.artifact_id, // Persisted resume ID from backend
+        qualityReport: data.qualityReport, // Quality assessment from backend
       };
 
       // If the backend persisted this generation, refresh the saved list
@@ -281,8 +313,6 @@ export const App: React.FC = () => {
   };
 
   const handleDownloadPDF = async () => {
-    let htmlToExport = currentArtifact?.html || generatedHtml;
-
     try {
       setIsExporting(true);
       setError(null);
@@ -295,47 +325,36 @@ export const App: React.FC = () => {
         setCurrentArtifact(artifact);
         setGeneratedContent(artifact.content);
         setGeneratedHtml(artifact.html);
-        htmlToExport = artifact.html;
       }
 
-      // Validate artifact has necessary content
-      if (!htmlToExport) {
-        if (!currentArtifact?.content) {
-          throw new Error('No resume content found. Please generate a resume first.');
-        }
-        // If we have content but no HTML, create a basic HTML wrapper
-        setExportStatus('Preparing resume for export…');
-        htmlToExport = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Resume</title>
-  <style>
-    body { font-family: Arial, sans-serif; line-height: 1.5; margin: 40px; }
-    h2 { margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
-  </style>
-</head>
-<body>
-<pre>${currentArtifact.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
-</body>
-</html>`;
+      // Need a resumeId (artifact_id from backend)
+      if (!currentArtifact?.resumeId) {
+        throw new Error('Resume not yet saved. Please try again after generation completes.');
       }
 
-      // Open HTML in new tab for user to print/save as PDF
-      setExportStatus('Opening resume in new tab…');
-      const htmlBlob = new Blob([htmlToExport], { type: 'text/html;charset=utf-8' });
-      const url = window.URL.createObjectURL(htmlBlob);
-      const newTab = window.open(url, '_blank', 'noopener,noreferrer');
+      // Call the PDF export endpoint
+      setExportStatus(EXPORT_STATUS.PDF);
+      const response = await fetch('/api/kb/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeId: currentArtifact.resumeId }),
+      });
 
-      if (!newTab) {
-        throw new Error('Could not open new tab. Please check popup blocker settings.');
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to export PDF');
       }
 
-      // Allow the blob to persist for the new tab
-      setTimeout(() => {
-        // Clean up after the tab has loaded (1 second should be enough)
-        // Actually, keep the URL alive for the tab's lifetime
-      }, 1000);
+      // Get the PDF file as a blob
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'tailored-resume.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
 
       // Mark artifact as exported
       if (currentArtifact) {
@@ -344,7 +363,65 @@ export const App: React.FC = () => {
       setExportStatus(null);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export resume');
+      setError(err instanceof Error ? err.message : 'Failed to export PDF');
+      setExportStatus(null);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDownloadDOCX = async () => {
+    try {
+      setIsExporting(true);
+      setError(null);
+
+      // If no artifact exists, generate one
+      if (!currentArtifact) {
+        setExportStatus('Generating tailored resume…');
+        const artifact = await generateResume();
+        if (!artifact) return;
+        setCurrentArtifact(artifact);
+        setGeneratedContent(artifact.content);
+        setGeneratedHtml(artifact.html);
+      }
+
+      // Need a resumeId (artifact_id from backend)
+      if (!currentArtifact?.resumeId) {
+        throw new Error('Resume not yet saved. Please try again after generation completes.');
+      }
+
+      // Call the DOCX export endpoint
+      setExportStatus(EXPORT_STATUS.DOCX);
+      const response = await fetch('/api/kb/docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeId: currentArtifact.resumeId }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to export DOCX');
+      }
+
+      // Get the DOCX file as a blob
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'tailored-resume.docx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      // Mark artifact as exported
+      if (currentArtifact) {
+        setCurrentArtifact({ ...currentArtifact, status: 'exported' });
+      }
+      setExportStatus(null);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export DOCX');
       setExportStatus(null);
     } finally {
       setIsExporting(false);
@@ -362,6 +439,137 @@ export const App: React.FC = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete document');
     }
+  };
+
+  // Render the quality report panel with P2 enhancements
+  const renderQualityReport = () => {
+    if (!currentArtifact?.qualityReport) {
+      if (currentArtifact && !currentArtifact.qualityReport) {
+        return (
+          <div className="quality-report-panel">
+            <p className="quality-unavailable">Quality check unavailable for this older resume.</p>
+          </div>
+        );
+      }
+      return null;
+    }
+
+    const report = currentArtifact.qualityReport;
+
+    // Get status display with P2 styling
+    const getStatusDisplay = (status: string) => {
+      return QUALITY_STATUS_CONFIG[status as keyof typeof QUALITY_STATUS_CONFIG] || QUALITY_STATUS_CONFIG.pass;
+    };
+
+    const statusDisplay = getStatusDisplay(report.overallStatus);
+
+    // Count warnings and failures for summary line
+    const warningCount = report.ats?.warnings?.length || 0;
+    const missingKeywordCount = report.keywords?.missing?.length || 0;
+
+    return (
+      <div className="quality-report-panel">
+        {/* P2 Enhancement: Header with title and prominent status badge */}
+        <div className="quality-header-p2">
+          <h3>Quality Check</h3>
+          <div className={`quality-badge quality-badge-${statusDisplay.className}`}>
+            <span className="quality-badge-icon">{statusDisplay.icon}</span>
+            <span className="quality-badge-label">{statusDisplay.label}</span>
+          </div>
+        </div>
+
+        {/* P2 Enhancement: Summary line showing issue counts */}
+        {report.overallStatus !== 'pass' && (
+          <div className="quality-summary-line">
+            <p>
+              {warningCount > 0 && `${warningCount} ATS warning${warningCount !== 1 ? 's' : ''}`}
+              {warningCount > 0 && missingKeywordCount > 0 && ' • '}
+              {missingKeywordCount > 0 && `${missingKeywordCount} missing keyword${missingKeywordCount !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+        )}
+
+        {/* Source Support Section */}
+        <div className="quality-section">
+          <h4>Source Support</h4>
+          <div className={`quality-item quality-${report.truthfulness.status === 'pass' ? 'pass' : 'warn'}`}>
+            {report.truthfulness.status === 'pass' ? '✓ Pass' : '⚠ Warning'}
+          </div>
+          {report.truthfulness.supportedClaims.length > 0 && (
+            <div className="quality-subsection">
+              <p className="quality-subsection-label">✓ Supported claims ({report.truthfulness.supportedClaims.length})</p>
+              {report.truthfulness.supportedClaims.slice(0, 2).map((claim, i) => (
+                <p key={`claim-${i}-${claim.substring(0, 30)}`} className="quality-subsection-item">{claim.substring(0, 60)}...</p>
+              ))}
+              {report.truthfulness.supportedClaims.length > 2 && (
+                <p className="quality-subsection-more">+{report.truthfulness.supportedClaims.length - 2} more</p>
+              )}
+            </div>
+          )}
+          {report.truthfulness.unsupportedClaims.length > 0 && (
+            <div className="quality-subsection quality-subsection-warning">
+              <p className="quality-subsection-label">⚠ Potential unsupported claims ({report.truthfulness.unsupportedClaims.length})</p>
+              {report.truthfulness.unsupportedClaims.slice(0, 1).map((claim, i) => (
+                <p key={`claim-${i}-${claim.substring(0, 30)}`} className="quality-subsection-item">{claim.substring(0, 60)}...</p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ATS Formatting Section */}
+        <div className="quality-section">
+          <h4>ATS Formatting</h4>
+          <div className={`quality-item quality-${report.ats.status === 'pass' ? 'pass' : 'warn'}`}>
+            {report.ats.status === 'pass' ? '✓ Pass' : '⚠ Warning'}
+          </div>
+          {report.ats.warnings.length > 0 && (
+            <div className="quality-subsection quality-subsection-warning">
+              {report.ats.warnings.filter(w => !dismissedWarnings.has(w)).map((warning, i) => (
+                <div key={`warning-${i}-${warning.substring(0, 30)}`} className="quality-warning-item">
+                  <p className="quality-warning-text">{warning}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Keywords Section */}
+        <div className="quality-section">
+          <h4>Keywords</h4>
+          <div className={`quality-item quality-${report.keywords.missing.length === 0 ? 'pass' : 'warn'}`}>
+            {report.keywords.missing.length === 0 ? '✓ Pass' : '⚠ Warning'}
+          </div>
+          {report.keywords.missing.length > 0 && (
+            <div className="quality-subsection quality-subsection-warning">
+              <p className="quality-subsection-label">Missing keywords ({report.keywords.missing.length})</p>
+              {report.keywords.missing.slice(0, 3).map((keyword, i) => (
+                <p key={`keyword-${i}-${keyword.substring(0, 30)}`} className="quality-subsection-item">{keyword}</p>
+              ))}
+              {report.keywords.missing.length > 3 && (
+                <p className="quality-subsection-more">+{report.keywords.missing.length - 3} more</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Length & Pages Section */}
+        {report.length && (
+          <div className="quality-section">
+            <h4>Length & Pages</h4>
+            <div className={`quality-item quality-${report.length.warnings.length === 0 ? 'pass' : 'warn'}`}>
+              {report.length.warnings.length === 0 ? '✓ Pass' : '⚠ Warning'}
+            </div>
+            {report.length.warnings.length > 0 && (
+              <div className="quality-subsection">
+                {report.length.warnings.map((warning, i) => (
+                  <p key={`length-${i}-${warning.substring(0, 30)}`} className="quality-subsection-item">{warning}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -445,56 +653,73 @@ export const App: React.FC = () => {
           </div>
         </aside>
 
-        <main className="center-panel">
-          <div className="generator-section">
-            <h2>Generate Tailored Resume</h2>
-            <div className="generator-form">
-              <label>Job Description</label>
-              <textarea
-                value={jobDescription}
-                onChange={(e) => setJobDescription(e.target.value)}
-                placeholder="Paste the job description here..."
-                rows={8}
-                disabled={isGenerating}
-              />
-              <button
-                onClick={handleGenerate}
-                disabled={isGenerating || documents.length === 0}
-                className="btn-primary btn-large"
-              >
-                {isGenerating ? 'Generating...' : 'Generate Resume'}
-              </button>
-            </div>
-          </div>
-
-          {generatedContent && (
-            <div className="generated-section">
-              <div className="generated-header">
-                <h2>Generated Resume</h2>
+        <main className="center-panel" data-phase={currentArtifact ? 'review' : 'input'}>
+          {!currentArtifact ? (
+            // INPUT PHASE: Large textarea, focused input mode
+            <div className="generator-section">
+              <h2>Generate Tailored Resume</h2>
+              <div className="generator-form">
+                <label>Job Description</label>
+                <textarea
+                  value={jobDescription}
+                  onChange={(e) => setJobDescription(e.target.value)}
+                  placeholder="Paste the job description here..."
+                  rows={12}
+                  disabled={isGenerating}
+                />
                 <button
-                  onClick={() => {
-                    setCurrentArtifact(null);
-                    setGeneratedContent(null);
-                    setGeneratedHtml(null);
-                    setJobDescription('');
-                    setExportStatus(null);
-                  }}
-                  className="btn-small-danger"
-                  title="Clear generated resume and job description"
+                  onClick={handleGenerate}
+                  disabled={isGenerating || documents.length === 0}
+                  className="btn-primary btn-large"
                 >
-                  Clear
+                  {isGenerating ? 'Generating...' : 'Generate Resume'}
                 </button>
               </div>
-              <div className="generated-content">
-                {generatedContent.split('\n').map((line, i) => (
-                  <p key={i}>{line || <br />}</p>
-                ))}
+            </div>
+          ) : (
+            // REVIEW PHASE: Two-pane layout (resume preview + quality report) + sticky footer
+            <>
+              {/* Resume Preview Pane */}
+              <div className="review-pane review-pane-top">
+                <div className="pane-header">
+                  <h3>Resume Preview</h3>
+                  <button
+                    onClick={() => {
+                      setCurrentArtifact(null);
+                      setGeneratedContent(null);
+                      setGeneratedHtml(null);
+                      setJobDescription('');
+                      setExportStatus(null);
+                      setDismissedWarnings(new Set());
+                    }}
+                    className="btn-small-primary"
+                    title="Back to edit job description"
+                  >
+                    ← Back to Edit
+                  </button>
+                </div>
+                <div className="resume-content">
+                  {generatedContent && (
+                    generatedContent.split('\n').map((line, i) => (
+                      <p key={`line-${i}-${line.substring(0, 20)}`}>{line || <br />}</p>
+                    ))
+                  )}
+                </div>
               </div>
-              <div className="button-group">
+
+              {/* Quality Report Pane */}
+              <div className="review-pane review-pane-bottom">
+                {renderQualityReport()}
+              </div>
+
+              {/* Sticky Footer with Export Buttons */}
+              <div className="review-footer">
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(generatedContent);
-                    alert('Copied to clipboard!');
+                    if (generatedContent) {
+                      navigator.clipboard.writeText(generatedContent);
+                      alert('Copied to clipboard!');
+                    }
                   }}
                   className="btn-secondary"
                 >
@@ -502,14 +727,22 @@ export const App: React.FC = () => {
                 </button>
                 <button
                   onClick={handleDownloadPDF}
-                  disabled={isExporting || (!currentArtifact && (documents.length === 0 || !jobDescription.trim()))}
+                  disabled={isExporting}
                   className="btn-primary"
-                  title={currentArtifact ? 'Open resume in new tab to print/save as PDF' : documents.length === 0 ? 'Upload documents first' : !jobDescription.trim() ? 'Enter job description first' : 'Open resume in new tab to print/save as PDF'}
+                  title="Open resume in new tab to print/save as PDF"
                 >
-                  {exportStatus || (isExporting ? 'Exporting...' : 'Export as PDF')}
+                  {isExporting && exportStatus === EXPORT_STATUS.PDF ? 'Exporting PDF...' : 'Export as PDF'}
+                </button>
+                <button
+                  onClick={handleDownloadDOCX}
+                  disabled={isExporting}
+                  className="btn-primary"
+                  title="Download resume as DOCX for editing"
+                >
+                  {isExporting && exportStatus === EXPORT_STATUS.DOCX ? 'Exporting DOCX...' : 'Export as DOCX'}
                 </button>
               </div>
-            </div>
+            </>
           )}
         </main>
 
@@ -997,6 +1230,504 @@ export const App: React.FC = () => {
         .saved-meta {
           font-size: 11px;
           color: var(--text-secondary);
+        }
+
+        .quality-report-panel {
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          padding: 16px;
+          margin: 16px 0;
+        }
+
+        .quality-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+          gap: 12px;
+        }
+
+        .quality-header h3 {
+          margin: 0;
+          font-size: 14px;
+          font-weight: 600;
+        }
+
+        .quality-overall {
+          padding: 6px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 600;
+          white-space: nowrap;
+        }
+
+        .quality-pass {
+          background: #e6ffe6;
+          color: #1a5c1a;
+        }
+
+        .quality-warn {
+          background: #fff4e6;
+          color: #8c6600;
+        }
+
+        .quality-fail {
+          background: #ffe6e6;
+          color: #8c1a1a;
+        }
+
+        .quality-section {
+          margin-bottom: 12px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .quality-section:last-child {
+          border-bottom: none;
+          margin-bottom: 0;
+          padding-bottom: 0;
+        }
+
+        .quality-section h4 {
+          margin: 0 0 8px 0;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .quality-status {
+          margin: 0 0 8px 0;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .quality-label {
+          margin: 0 0 4px 0;
+          font-size: 11px;
+          font-weight: 500;
+          color: var(--text-secondary);
+        }
+
+        .quality-list {
+          margin: 8px 0 0 0;
+        }
+
+        .quality-list.quality-warning {
+          background: rgba(255, 165, 0, 0.05);
+          padding: 8px;
+          border-radius: 3px;
+        }
+
+        .quality-item {
+          margin: 4px 0;
+          font-size: 12px;
+          color: var(--text-secondary);
+        }
+
+        .quality-item.quality-ok {
+          color: #1a5c1a;
+          font-weight: 500;
+        }
+
+        .quality-item-more {
+          margin: 4px 0;
+          font-size: 11px;
+          color: var(--text-secondary);
+          font-style: italic;
+        }
+
+        .quality-item-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 8px;
+          margin: 4px 0;
+        }
+
+        .quality-item-row .quality-item {
+          flex: 1;
+          margin: 0;
+        }
+
+        .quality-item-row .quality-item-more {
+          flex: 1;
+          margin: 0;
+        }
+
+        .dismiss-btn {
+          background: transparent;
+          border: none;
+          color: var(--text-secondary);
+          cursor: pointer;
+          font-size: 14px;
+          padding: 2px 4px;
+          line-height: 1;
+          transition: color 0.2s;
+          flex-shrink: 0;
+        }
+
+        .dismiss-btn:hover {
+          color: var(--text-primary);
+        }
+
+        .quality-warning-export {
+          background: var(--error-bg);
+          border: 1px solid #ffc0c0;
+          color: var(--error-text);
+          padding: 8px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          margin-top: 12px;
+        }
+
+        .quality-unavailable {
+          color: var(--text-secondary);
+          font-size: 12px;
+          font-style: italic;
+          margin: 0;
+        }
+
+        /* P1: Two-Pane Layout - Center Panel */
+        .center-panel[data-phase="review"] {
+          display: grid;
+          grid-template-rows: 1fr 1fr auto;
+          grid-template-columns: 1fr;
+          height: 100%;
+          overflow: hidden;
+        }
+
+        .center-panel[data-phase="input"] {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          overflow-y: auto;
+        }
+
+        /* Resume Preview Pane (Top) */
+        .review-pane {
+          display: flex;
+          flex-direction: column;
+          overflow-y: auto;
+          padding: 0;
+          min-height: 0;
+        }
+
+        .review-pane-top {
+          border-bottom: 1px solid var(--border-color);
+          background: var(--bg-primary);
+        }
+
+        .review-pane-top .pane-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--border-color);
+          flex-shrink: 0;
+          background: var(--bg-primary);
+        }
+
+        .review-pane-top .pane-header h3 {
+          margin: 0;
+          font-size: 14px;
+          font-weight: 600;
+        }
+
+        .review-pane-top .btn-small-primary {
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: 500;
+          background: var(--accent);
+          color: white;
+          border: none;
+          border-radius: 3px;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+
+        .review-pane-top .btn-small-primary:hover {
+          opacity: 0.9;
+        }
+
+        .resume-content {
+          flex: 1;
+          padding: 20px;
+          overflow-y: auto;
+          background: var(--bg-primary);
+          font-family: 'Courier New', monospace;
+          font-size: 11px;
+          line-height: 1.4;
+          color: var(--text-primary);
+        }
+
+        .resume-content p {
+          margin: 0;
+          word-wrap: break-word;
+        }
+
+        /* Quality Report Pane (Bottom) */
+        .review-pane-bottom {
+          background: var(--bg-secondary);
+          border-top: 1px solid var(--border-color);
+          padding: 16px 20px;
+          overflow-y: auto;
+        }
+
+        /* Sticky Footer with Export Buttons */
+        .review-footer {
+          background: var(--bg-secondary);
+          border-top: 2px solid var(--border-color);
+          padding: 12px 20px;
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          flex-shrink: 0;
+        }
+
+        .review-footer .btn-secondary,
+        .review-footer .btn-primary {
+          padding: 8px 14px;
+          font-size: 12px;
+          font-weight: 500;
+          border-radius: 3px;
+          cursor: pointer;
+          transition: opacity 0.2s;
+          white-space: nowrap;
+        }
+
+        .review-footer .btn-secondary {
+          background: white;
+          border: 1px solid var(--border-color);
+          color: var(--text-primary);
+        }
+
+        .review-footer .btn-secondary:hover:not(:disabled) {
+          background: var(--bg-primary);
+        }
+
+        .review-footer .btn-primary {
+          background: var(--accent);
+          color: white;
+          border: none;
+        }
+
+        .review-footer .btn-primary:hover:not(:disabled) {
+          opacity: 0.9;
+        }
+
+        .review-footer .btn-primary:disabled,
+        .review-footer .btn-secondary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* Mobile Responsive: Stack vertically on small screens */
+        @media (max-width: 600px) {
+          .center-panel[data-phase="review"] {
+            grid-template-rows: auto auto auto;
+          }
+
+          .review-pane-top {
+            max-height: 40vh;
+          }
+
+          .review-pane-bottom {
+            max-height: 40vh;
+          }
+
+          .review-footer {
+            flex-direction: column;
+            justify-content: stretch;
+          }
+
+          .review-footer .btn-secondary,
+          .review-footer .btn-primary {
+            width: 100%;
+          }
+        }
+
+        /* P2: Quality Report Redesign */
+        .quality-report-panel {
+          background: var(--bg-secondary);
+          border: none;
+          border-radius: 0;
+          padding: 0;
+          margin: 0;
+        }
+
+        /* P2 Header with Title and Status Badge */
+        .quality-header-p2 {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .quality-header-p2 h3 {
+          margin: 0;
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        /* P2 Prominent Status Badge */
+        .quality-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border-radius: 3px;
+          font-size: 13px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .quality-badge-icon {
+          font-size: 14px;
+        }
+
+        .quality-badge-label {
+          letter-spacing: 0.3px;
+        }
+
+        .quality-badge-quality-pass {
+          background: #e6ffe6;
+          color: #1a5c1a;
+        }
+
+        .quality-badge-quality-warn {
+          background: #fff4e6;
+          color: #cc6633;
+        }
+
+        .quality-badge-quality-fail {
+          background: #ffe6e6;
+          color: #8c1a1a;
+        }
+
+        /* P2 Summary Line */
+        .quality-summary-line {
+          background: rgba(204, 102, 51, 0.05);
+          border-left: 3px solid #cc6633;
+          padding: 8px 10px;
+          margin-bottom: 12px;
+          border-radius: 2px;
+        }
+
+        .quality-summary-line p {
+          margin: 0;
+          font-size: 12px;
+          color: #666;
+          font-weight: 500;
+          line-height: 1.4;
+        }
+
+        /* Quality Section with Better Hierarchy */
+        .quality-section {
+          margin-bottom: 12px;
+          padding-bottom: 10px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .quality-section:last-child {
+          border-bottom: none;
+          margin-bottom: 0;
+          padding-bottom: 0;
+        }
+
+        .quality-section h4 {
+          margin: 0 0 6px 0;
+          font-size: 12px;
+          font-weight: 700;
+          color: var(--text-primary);
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
+        }
+
+        /* Quality Item (Status Line) */
+        .quality-item {
+          margin: 0 0 6px 0;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1.4;
+        }
+
+        .quality-item.quality-pass {
+          color: #1a5c1a;
+        }
+
+        .quality-item.quality-warn {
+          color: #cc6633;
+        }
+
+        .quality-item.quality-fail {
+          color: #8c1a1a;
+        }
+
+        /* Subsection for Details */
+        .quality-subsection {
+          margin: 6px 0;
+          padding: 0;
+          font-size: 11px;
+        }
+
+        .quality-subsection-label {
+          margin: 0 0 4px 0;
+          font-size: 11px;
+          font-weight: 600;
+          color: #666;
+        }
+
+        .quality-subsection-item {
+          margin: 2px 0 2px 12px;
+          font-size: 11px;
+          color: #999;
+          line-height: 1.3;
+        }
+
+        .quality-subsection-more {
+          margin: 2px 0 0 12px;
+          font-size: 10px;
+          color: #999;
+          font-style: italic;
+        }
+
+        .quality-subsection-warning {
+          background: rgba(204, 102, 51, 0.05);
+          padding: 4px 8px;
+          border-left: 3px solid #cc6633;
+          border-radius: 2px;
+          margin: 6px 0 0 0;
+        }
+
+        .quality-subsection-warning .quality-subsection-label {
+          color: #cc6633;
+          font-weight: 700;
+        }
+
+        /* Warning Item in ATS Section */
+        .quality-warning-item {
+          background: rgba(204, 102, 51, 0.03);
+          padding: 4px 8px;
+          margin: 4px 0;
+          border-radius: 2px;
+          border-left: 2px solid #cc6633;
+        }
+
+        .quality-warning-text {
+          margin: 0;
+          font-size: 11px;
+          color: #666;
+          line-height: 1.4;
+        }
+
+        /* Hide/Restyle Dismiss Buttons */
+        .dismiss-btn {
+          display: none;
         }
       `}</style>
     </div>

@@ -4,6 +4,7 @@ import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { DatabaseService } from '../services/database.service';
 import { DocumentParserService } from '../services/document-parser.service';
+import { CareerModelService } from '../services/career-model.service';
 import { pdfGenerator } from '../services/pdf-generator.service';
 import { GenerateResumeUseCase } from '../use-cases/generate-resume.usecase';
 import type { GeneratedMaterialRepository } from '../repositories/generated-material.repository';
@@ -27,6 +28,7 @@ const upload = multer({
 interface KnowledgeRouterDeps {
   db: DatabaseService;
   parser: DocumentParserService;
+  careerModelService?: CareerModelService;
   extractor?: any; // Claude carrier: { claude } — generation calls extractor.claude.call(...)
   materialRepository?: GeneratedMaterialRepository; // persists successful generations
 }
@@ -36,6 +38,7 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
   // never stacks duplicate route registrations on a shared instance.
   const router = Router();
   const { db, parser } = deps;
+  const careerModelService = deps.careerModelService || new CareerModelService();
   const generateResumeUseCase = new GenerateResumeUseCase({
     db,
     extractor: deps.extractor,
@@ -243,22 +246,48 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
     let pdfBuffer: Buffer | null = null;
 
     try {
-      const { html, filename } = req.body;
+      const { html, filename, resumeId } = req.body;
+      let pdfHtml = html;
+      let pdfFilename = filename;
 
-      if (!html) {
+      // If resumeId provided, fetch resume and use its rendered_html
+      if (resumeId) {
+        console.log('[PDF] Fetching resume from database:', resumeId);
+        const connection = db.getConnection();
+        const resume = connection
+          .prepare('SELECT rendered_html, title FROM generated_resumes WHERE id = ?')
+          .get(resumeId) as { rendered_html: string | null; title: string } | undefined;
+
+        if (!resume) {
+          console.log('[PDF] Resume not found:', resumeId);
+          res.status(404).json({ error: `Resume ${resumeId} not found` });
+          return;
+        }
+
+        if (resume.rendered_html) {
+          pdfHtml = resume.rendered_html;
+          pdfFilename = pdfFilename || resume.title || 'resume.pdf';
+        } else {
+          console.log('[PDF] No rendered HTML for resume:', resumeId);
+          res.status(422).json({ error: 'Resume has no rendered content for PDF export' });
+          return;
+        }
+      }
+
+      if (!pdfHtml) {
         console.log('[PDF] No HTML provided');
         res.status(400).json({ error: 'HTML resume required' });
         return;
       }
 
       // Validate HTML is not too large
-      if (html.length > 10 * 1024 * 1024) {
+      if (pdfHtml.length > 10 * 1024 * 1024) {
         console.log('[PDF] HTML too large');
         res.status(400).json({ error: 'HTML content too large (max 10MB)' });
         return;
       }
 
-      console.log('[PDF] Starting PDF generation, HTML size:', html.length, 'bytes');
+      console.log('[PDF] Starting PDF generation, HTML size:', pdfHtml.length, 'bytes');
 
       // Generate PDF with timeout
       let timeoutId: NodeJS.Timeout | undefined;
@@ -273,7 +302,7 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
         pdfBuffer = await Promise.race([
           (async () => {
             console.log('[PDF] Calling pdfGenerator.htmlToPdf');
-            const result = await pdfGenerator.htmlToPdf(html, filename);
+            const result = await pdfGenerator.htmlToPdf(pdfHtml, pdfFilename);
             console.log('[PDF] htmlToPdf returned:', result?.length, 'bytes');
             return result;
           })(),
@@ -299,7 +328,7 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
 
       // Return PDF as file download
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename || 'resume.pdf'}"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${pdfFilename || 'resume.pdf'}"`);
       res.setHeader('Content-Length', pdfBuffer.length);
       res.send(pdfBuffer);
       console.log('[PDF] Response sent successfully');
@@ -322,6 +351,77 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
     }
   });
 
+  // POST /api/kb/docx - Export a saved resume as DOCX
+  router.post('/docx', async (req: Request, res: Response) => {
+    try {
+      const { resumeId } = req.body;
+
+      if (!resumeId) {
+        res.status(400).json({ error: 'resumeId is required' });
+        return;
+      }
+
+      // Look up the saved resume in the database
+      const connection = db.getConnection();
+      const resume = connection
+        .prepare('SELECT id, structured_resume_json, generated_content FROM generated_resumes WHERE id = ?')
+        .get(resumeId) as
+        | { id: string; structured_resume_json: string | null; generated_content: string }
+        | undefined;
+
+      if (!resume) {
+        res.status(404).json({ error: `Resume ${resumeId} not found` });
+        return;
+      }
+
+      // Generate DOCX from the best available source
+      const { docxGeneratorService } = await import('../services/docx-generator.service');
+      let docxBuffer: Buffer;
+
+      if (resume.structured_resume_json) {
+        // Prefer structured resume (new format)
+        try {
+          const structuredResume = JSON.parse(resume.structured_resume_json);
+          docxBuffer = await docxGeneratorService.generateFromStructured(structuredResume);
+        } catch (parseError) {
+          console.error('Failed to parse structured resume, falling back to generated_content');
+          if (!resume.generated_content?.trim()) {
+            res.status(422).json({
+              error: 'Resume has no valid content to export (structured parse failed and generated_content empty)',
+            });
+            return;
+          }
+          docxBuffer = await docxGeneratorService.generate(resume.generated_content);
+        }
+      } else if (resume.generated_content?.trim()) {
+        // Fallback to generated content (older format)
+        docxBuffer = await docxGeneratorService.generate(resume.generated_content);
+      } else {
+        // No usable content
+        res.status(422).json({
+          error: 'Resume has no valid content to export',
+        });
+        return;
+      }
+
+      // Set response headers for file download
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      );
+      res.setHeader('Content-Disposition', 'attachment; filename="resume.docx"');
+      res.setHeader('Content-Length', docxBuffer.length);
+
+      // Send the DOCX buffer
+      res.send(docxBuffer);
+    } catch (error) {
+      console.error('DOCX export error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'DOCX export failed',
+      });
+    }
+  });
+
   // POST /api/kb/generate - Generate tailored resume for a job description
   router.post('/generate', async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -329,6 +429,95 @@ export function createKnowledgeRoutes(deps: KnowledgeRouterDeps): Router {
       res.status(statusCode).json(body);
     } catch (error) {
       next(error);
+    }
+  });
+
+  // Career Model Routes
+  // GET /api/kb/career-model - Get current career model and stale status
+  router.get('/career-model', (req: Request, res: Response) => {
+    try {
+      const documents = db.getAllDocuments();
+      const sourceHash = careerModelService.hashSources(documents);
+      const latestModel = db.getLatestCareerModel();
+
+      // Determine if stale
+      let stale = false;
+      if (documents.length > 0 && !latestModel) {
+        // Documents exist but no model
+        stale = true;
+      } else if (latestModel && latestModel.source_hash !== sourceHash) {
+        // Model exists but hash doesn't match
+        stale = true;
+      }
+      // If no documents, stale = false (nothing to build)
+
+      res.json({
+        success: true,
+        careerModel: latestModel || null,
+        stale,
+        sourceDocumentCount: documents.length,
+        sourceHash: documents.length > 0 ? sourceHash : null,
+      });
+    } catch (error) {
+      console.error('Get career model error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to get career model',
+      });
+    }
+  });
+
+  // POST /api/kb/career-model/rebuild - Extract and persist a new career model
+  router.post('/career-model/rebuild', (req: Request, res: Response) => {
+    try {
+      const documents = db.getAllDocuments();
+
+      if (documents.length === 0) {
+        res.status(400).json({
+          error: 'No documents uploaded. Upload at least one document before building a career model.',
+        });
+        return;
+      }
+
+      const activeSessionId = db.getActiveSession();
+      const careerModel = careerModelService.buildFromDocuments(activeSessionId, documents);
+
+      // Persist the model
+      const persistedModel = db.createCareerModel({
+        source_document_ids: careerModel.source_document_ids,
+        source_hash: careerModel.source_hash,
+        model_json: careerModel.model_json,
+        model_version: careerModel.model_version,
+      });
+
+      res.json({
+        success: true,
+        careerModel: persistedModel,
+        sourceDocumentCount: documents.length,
+        rebuilt: true,
+      });
+    } catch (error) {
+      console.error('Rebuild career model error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to rebuild career model',
+      });
+    }
+  });
+
+  // GET /api/kb/career-models - List career model versions (newest first)
+  router.get('/career-models', (req: Request, res: Response) => {
+    try {
+      const models = db.listCareerModels();
+
+      res.json({
+        success: true,
+        careerModels: models,
+        count: models.length,
+      });
+    } catch (error) {
+      console.error('List career models error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to list career models',
+      });
     }
   });
 

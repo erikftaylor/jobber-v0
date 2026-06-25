@@ -173,6 +173,112 @@ describe('Knowledge Routes', () => {
     }
   });
 
+  it('POST /api/kb/docx requires resumeId in request body', async () => {
+    const res = await request(app).post('/api/kb/docx').send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('resumeId');
+  });
+
+  it('POST /api/kb/docx returns 404 for unknown resume ID', async () => {
+    const res = await request(app).post('/api/kb/docx').send({ resumeId: 'unknown-id-xyz' });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it('POST /api/kb/docx returns 400 if resume has empty content', async () => {
+    // Insert a resume with empty content into the database
+    const connection = db.getConnection();
+    connection
+      .prepare(
+        `INSERT INTO generated_resumes (id, type, title, job_description_hash, source_document_ids, generated_content)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run('empty-resume-id', 'resume', 'Test Resume', 'hash123', '[]', '');
+
+    const res = await request(app).post('/api/kb/docx').send({ resumeId: 'empty-resume-id' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toContain('valid content');
+  });
+
+  it('POST /api/kb/docx returns DOCX buffer with correct headers on success', async () => {
+    // Insert a valid resume into the database
+    const connection = db.getConnection();
+    const resumeContent = `Jane Doe
+
+SUMMARY
+Senior Software Engineer with 8 years of experience.
+
+EXPERIENCE
+Staff Engineer, TechCorp | 2023 – Present
+- Led critical infrastructure project
+
+SKILLS
+TypeScript • React • Node.js`;
+
+    connection
+      .prepare(
+        `INSERT INTO generated_resumes (id, type, title, job_description_hash, source_document_ids, generated_content)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run('test-resume-id', 'resume', 'Senior Engineer Resume', 'hash123', '[]', resumeContent);
+
+    const res = await request(app)
+      .post('/api/kb/docx')
+      .send({ resumeId: 'test-resume-id' })
+      .responseType('arraybuffer'); // Expect binary response
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    );
+    expect(res.headers['content-disposition']).toMatch(/attachment.*filename="resume\.docx"/);
+    expect(Buffer.isBuffer(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
+  });
+
+  it('POST /api/kb/docx response is a valid DOCX file (ZIP structure)', async () => {
+    // Insert a valid resume
+    const connection = db.getConnection();
+    const resumeContent = `John Smith
+
+SUMMARY
+Product Manager with excellent communication skills.
+
+SKILLS
+Product Strategy • Communication • Analytics`;
+
+    connection
+      .prepare(
+        `INSERT INTO generated_resumes (id, type, title, job_description_hash, source_document_ids, generated_content)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run('pm-resume-id', 'resume', 'PM Resume', 'hash456', '[]', resumeContent);
+
+    const res = await request(app)
+      .post('/api/kb/docx')
+      .send({ resumeId: 'pm-resume-id' })
+      .responseType('arraybuffer'); // Expect binary response
+
+    expect(res.status).toBe(200);
+
+    // Verify DOCX ZIP structure
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip(res.body);
+    const entries = zip.getEntries();
+
+    expect(entries.length).toBeGreaterThan(0);
+    const docXmlEntry = entries.find((e: any) => e.entryName === 'word/document.xml');
+    expect(docXmlEntry).toBeDefined();
+
+    // Verify content is in the document
+    const docXml = docXmlEntry.getData().toString('utf-8');
+    expect(docXml).toContain('John Smith');
+    expect(docXml).toContain('Product Manager');
+  });
+
   it('POST /api/kb/generate delegates to the use case and returns 501 when Claude is not configured', async () => {
     // This app is mounted without an extractor, so the use case short-circuits.
     const res = await request(app).post('/api/kb/generate').send({ job_description: 'Senior PD role' });
@@ -180,6 +286,153 @@ describe('Knowledge Routes', () => {
     expect(res.status).toBe(501);
     expect(res.body.success).toBe(false);
     expect(res.body.error).toBeDefined();
+  });
+
+  // Career Model Routes
+  describe('Career Model Endpoints', () => {
+    it('GET /api/kb/career-model returns null and stale false when no documents exist', async () => {
+      const res = await request(app).get('/api/kb/career-model');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.careerModel).toBeNull();
+      expect(res.body.stale).toBe(false);
+      expect(res.body.sourceDocumentCount).toBe(0);
+      expect(res.body.sourceHash).toBeNull();
+    });
+
+    it('GET /api/kb/career-model returns stale true when documents exist but no model exists', async () => {
+      // Upload a document
+      db.saveDocument('resume', 'resume.txt', 'John Doe\nSenior Engineer');
+
+      const res = await request(app).get('/api/kb/career-model');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.careerModel).toBeNull();
+      expect(res.body.stale).toBe(true);
+      expect(res.body.sourceDocumentCount).toBe(1);
+      expect(res.body.sourceHash).toBeDefined();
+    });
+
+    it('POST /api/kb/career-model/rebuild returns 400 when no documents exist', async () => {
+      const res = await request(app).post('/api/kb/career-model/rebuild');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('No documents uploaded');
+    });
+
+    it('POST /api/kb/career-model/rebuild creates and returns a model when documents exist', async () => {
+      // Upload a document
+      db.saveDocument('resume', 'resume.txt', 'John Doe\nSenior Engineer\njohn@example.com\n\nEXPERIENCE\nSenior Engineer | TechCorp | 2020 – 2023\n• Built APIs');
+
+      const res = await request(app).post('/api/kb/career-model/rebuild');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.rebuilt).toBe(true);
+      expect(res.body.careerModel).toBeDefined();
+      expect(res.body.careerModel.id).toBeDefined();
+      expect(res.body.careerModel.session_id).toBeDefined();
+      expect(res.body.careerModel.source_document_ids.length).toBe(1);
+      expect(res.body.sourceDocumentCount).toBe(1);
+    });
+
+    it('GET /api/kb/career-model returns stale false after rebuild', async () => {
+      // Upload a document
+      db.saveDocument('resume', 'resume.txt', 'John Doe\nSenior Engineer');
+
+      // Rebuild
+      await request(app).post('/api/kb/career-model/rebuild');
+
+      // Check status
+      const res = await request(app).get('/api/kb/career-model');
+
+      expect(res.status).toBe(200);
+      expect(res.body.careerModel).not.toBeNull();
+      expect(res.body.stale).toBe(false);
+    });
+
+    it('GET /api/kb/career-model returns stale true after source document changes', async () => {
+      // Upload a document
+      const doc = db.saveDocument('resume', 'resume.txt', 'John Doe\nSenior Engineer');
+
+      // Rebuild
+      await request(app).post('/api/kb/career-model/rebuild');
+
+      // Check status (should be non-stale)
+      let res = await request(app).get('/api/kb/career-model');
+      expect(res.body.stale).toBe(false);
+
+      // Update the document text by deleting and re-adding
+      db.deleteDocument(doc.id);
+      db.saveDocument('resume', 'resume.txt', 'Jane Smith\nPrincipal Engineer\njane@example.com');
+
+      // Check status again (should be stale)
+      res = await request(app).get('/api/kb/career-model');
+      expect(res.status).toBe(200);
+      expect(res.body.stale).toBe(true);
+    });
+
+    it('GET /api/kb/career-models returns list of versions newest first', async () => {
+      // Upload a document
+      db.saveDocument('resume', 'resume.txt', 'John Doe\nSenior Engineer');
+
+      // Build first model
+      await request(app).post('/api/kb/career-model/rebuild');
+
+      // Build second model (same documents)
+      const res = await request(app).get('/api/kb/career-models');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.careerModels)).toBe(true);
+      expect(res.body.count).toBeGreaterThan(0);
+
+      // Verify newest first ordering
+      if (res.body.careerModels.length > 1) {
+        const created1 = new Date(res.body.careerModels[0].created_at).getTime();
+        const created2 = new Date(res.body.careerModels[1].created_at).getTime();
+        expect(created1).toBeGreaterThanOrEqual(created2);
+      }
+    });
+
+    it('Career model persists source document IDs', async () => {
+      // Upload multiple documents
+      const doc1 = db.saveDocument('resume', 'resume.txt', 'Resume content');
+      const doc2 = db.saveDocument('cover_letter', 'letter.txt', 'Letter content');
+
+      // Rebuild
+      const res = await request(app).post('/api/kb/career-model/rebuild');
+
+      expect(res.body.careerModel.source_document_ids).toContain(doc1.id);
+      expect(res.body.careerModel.source_document_ids).toContain(doc2.id);
+      expect(res.body.careerModel.source_document_ids.length).toBe(2);
+    });
+
+    it('Career model includes extracted knowledge', async () => {
+      // Upload a document with extractable content
+      db.saveDocument(
+        'resume',
+        'resume.txt',
+        'John Doe\njohn@example.com\n\nSenior Engineer | TechCorp | 2020 – 2023\n• Led team of 5\n• Increased revenue by 35%\n\nSKILLS\nJavaScript, React, Python'
+      );
+
+      // Rebuild
+      const res = await request(app).post('/api/kb/career-model/rebuild');
+
+      const model = res.body.careerModel;
+      expect(model.model_json).toBeDefined();
+
+      // Should have extracted contact info
+      expect(model.model_json.contact.name || model.model_json.contact.email).toBeTruthy();
+
+      // Should have extracted approved claims from bullets
+      if (model.model_json.approvedClaims.length > 0) {
+        expect(model.model_json.approvedClaims[0].sourceDocumentIds).toBeDefined();
+        expect(Array.isArray(model.model_json.approvedClaims[0].sourceDocumentIds)).toBe(true);
+      }
+    });
   });
 });
 
@@ -220,7 +473,7 @@ BFA Design • Some University • 2014`;
     cleanup();
     fs.mkdirSync(path.dirname(genDbPath), { recursive: true });
     genDb = new DatabaseService(genDbPath);
-    genDb.saveDocument('resume', 'cv.txt', 'Jane Doe — Senior Product Designer');
+    genDb.saveDocument('resume', 'cv.txt', 'Jane Doe\n\nPROFESSIONAL EXPERIENCE\n\nDesign Corp — Senior Product Designer\n2020 – Present\n• Led teams');
   });
 
   afterEach(cleanup);
