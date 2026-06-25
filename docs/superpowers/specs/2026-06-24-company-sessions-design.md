@@ -76,11 +76,17 @@ Add a sessions dropdown next to app title:
 - Click to switch to that session
 - Icon/badge to show session status (in progress, completed, etc.)
 
-### New Session Modal
-Triggered by `+ New` button:
-- Company name input (required, e.g., "Acme Corp")
-- Role title input (required, e.g., "Senior Engineer")
-- Submit creates session, switches to it immediately
+### New Session Creation (from Job Description)
+When user pastes a job description:
+1. Paste job description into center panel
+2. Click "Create Session" or trigger on blur
+3. Claude extracts company name and role title
+4. **Success case:** Auto-fills company and role, creates session immediately
+5. **Failure case:** Shows warning dialog with input fields for company and role
+   - User manually enters missing details
+   - Confirms to create session
+
+No manual `+ New` button needed for typical flow. Company and role are derived from the pasted job description.
 
 ### Existing UI (Unchanged)
 - Left sidebar: Upload documents, enter job description (session-specific)
@@ -101,13 +107,16 @@ Not required for MVP but improves discoverability.
 ## User Workflows
 
 ### Creating a Session
-1. User clicks `+ New`
-2. Modal appears: "Company: ___, Role: ___"
-3. User enters "Acme Corp" and "Senior Engineer"
-4. Session created, user switched to it
-5. User uploads documents (if first time) or reuses existing
-6. User pastes job description
-7. User clicks "Generate Resume"
+1. User pastes job description into the center panel
+2. Claude automatically extracts company name and role title
+3. Session auto-created with extracted details, user switched to it
+4. If extraction fails: warning dialog appears asking user to manually enter company and role
+5. User confirms (or manually enters if needed)
+6. Session created
+7. User uploads documents (if first time) or reuses existing
+8. User clicks "Generate Resume"
+
+**Implementation Note:** Job description input triggers extraction on blur or on a "Create Session" button click. The extraction call to Claude happens before session creation.
 
 ### Switching Sessions
 1. User clicks dropdown: "Company: Acme Corp ▼"
@@ -124,18 +133,26 @@ Not required for MVP but improves discoverability.
 
 ## Implementation Plan (Phases)
 
-### Phase 1: Session Dropdown & Creation
-- Add dropdown component to header
-- Add "new session" modal
+### Phase 1: Job Description Extraction Service
+- Create backend endpoint: `POST /api/jobs/extract` — takes job description text, returns extracted company and role
+- Claude-powered extraction (use existing Claude integration)
+- Handle extraction failures gracefully
+- Return structured response: `{company: string, role: string, confidence: number}`
+
+### Phase 2: Session Creation from Job Description
+- Add "Create Session" button to job description input
+- On click: call extraction service
+- On success: auto-create session with extracted company/role
+- On failure: show warning dialog with manual input fields
+- Wire session creation to auto-switch to new session
+
+### Phase 3: Session Dropdown & Switching
+- Add dropdown component to header with list of sessions
 - Wire dropdown to load sessions from `GET /api/jobs`
 - Track `activeSessionId` in app state
+- Load session data (job description, resumes, chat) when switching
 
-### Phase 2: Session Switching
-- Load session data when user selects from dropdown
-- Update job description, generated resumes, chat to show selected session
-- Persist active session ID (localStorage or server-side)
-
-### Phase 3: Session Summary (Optional)
+### Phase 4: Session Summary (Optional)
 - Add status indicators to dropdown
 - Show "last modified" dates
 - Show generated resume count per session
@@ -161,8 +178,10 @@ Not required for MVP but improves discoverability.
 
 ## Error Handling
 
+- **Extraction fails:** Show warning dialog with input fields for company name and role title. User must manually enter values before session can be created.
+- **Extraction partial:** If only company OR role extracted, show confirmation dialog asking user to confirm/correct the extracted value and fill in the missing one.
 - **Session not found:** If user switches to deleted session, show error and default to first session
-- **Create session:** Validate company name and role are non-empty
+- **Create session:** Validate company name and role are non-empty before creating
 - **Switch session:** Gracefully handle if session data fails to load
 
 ## Rollout
