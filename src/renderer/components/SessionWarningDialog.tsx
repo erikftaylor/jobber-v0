@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styles from './SessionWarningDialog.module.css';
 
 interface ExtractedInfo {
@@ -18,6 +18,11 @@ export default function SessionWarningDialog({ isOpen, extracted, onConfirm, onC
   const [company, setCompany] = useState(extracted.company || '');
   const [role, setRole] = useState(extracted.role || '');
 
+  useEffect(() => {
+    setCompany(extracted.company || '');
+    setRole(extracted.role || '');
+  }, [isOpen, extracted.company, extracted.role]);
+
   if (!isOpen) return null;
 
   const handleConfirm = () => {
@@ -32,17 +37,21 @@ export default function SessionWarningDialog({ isOpen, extracted, onConfirm, onC
         <h2>Complete Session Details</h2>
         <p>Company and job title could not be extracted from the job description. Please enter them manually:</p>
 
+        <label htmlFor="company-input" className={styles.label}>Company name</label>
         <input
+          id="company-input"
           type="text"
-          placeholder="Company name (e.g., Acme Corporation)"
+          placeholder="e.g., Acme Corporation"
           value={company}
           onChange={(e) => setCompany(e.target.value)}
           className={styles.input}
         />
 
+        <label htmlFor="role-input" className={styles.label}>Job title</label>
         <input
+          id="role-input"
           type="text"
-          placeholder="Job title (e.g., Senior Software Engineer)"
+          placeholder="e.g., Senior Software Engineer"
           value={role}
           onChange={(e) => setRole(e.target.value)}
           className={styles.input}
