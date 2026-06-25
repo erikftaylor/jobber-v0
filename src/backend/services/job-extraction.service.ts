@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic();
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 export interface ExtractedJobInfo {
   company: string | null;
@@ -9,6 +11,10 @@ export interface ExtractedJobInfo {
 }
 
 export async function extractJobInfo(jobDescription: string): Promise<ExtractedJobInfo> {
+  if (!jobDescription?.trim()) {
+    return { company: null, role: null, confidence: 0 };
+  }
+
   const prompt = `Extract the company name and job title from the following job description.
 Return a JSON object with "company", "role", and "confidence" (0-1).
 If you cannot extract a field with reasonable confidence, set it to null.
@@ -29,7 +35,9 @@ Respond with only valid JSON, no other text.`;
     ]
   });
 
-  const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
+  const responseText = message.content?.[0]?.type === 'text'
+    ? message.content[0].text
+    : '';
 
   try {
     const parsed = JSON.parse(responseText);
